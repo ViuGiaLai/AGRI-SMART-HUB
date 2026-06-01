@@ -5,3 +5,4 @@ pandas
 matplotlib
 google-generativeai
 pillow
+tenacity
