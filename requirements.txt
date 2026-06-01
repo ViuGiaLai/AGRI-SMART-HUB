@@ -1,0 +1,7 @@
+supabase
+python-dotenv
+customtkinter
+pandas
+matplotlib
+google-generativeai
+pillow
