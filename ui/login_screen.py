@@ -1,9 +1,14 @@
+# -*- coding: utf-8 -*-
 import customtkinter as ctk
-from database.client import get_supabase
 from tkinter import messagebox
 import re
+from database.client import get_supabase
+import json
+import os
 
 class LoginScreen(ctk.CTkFrame):
+    SAVED_ACCOUNTS_FILE = ".saved_accounts.json"
+    
     def __init__(self, parent, login_success_callback):
         super().__init__(parent)
         self.login_success_callback = login_success_callback
@@ -19,7 +24,7 @@ class LoginScreen(ctk.CTkFrame):
         
         # Cấu hình grid cho main_frame
         self.main_frame.grid_rowconfigure(0, weight=1)
-        self.main_frame.grid_rowconfigure(6, weight=1)
+        self.main_frame.grid_rowconfigure(9, weight=1)
         self.main_frame.grid_columnconfigure(0, weight=1)
         
         # Icon/Logo (có thể thay bằng image)
@@ -45,11 +50,58 @@ class LoginScreen(ctk.CTkFrame):
             font=ctk.CTkFont(size=12),
             text_color=("gray60", "gray50")
         )
-        self.subtitle_label.grid(row=2, column=0, pady=(0, 30))
+        self.subtitle_label.grid(row=2, column=0, pady=(0, 20))
+        
+        # === PHẦN TÀI KHOẢN ĐÃ LƯU ===
+        self.saved_accounts = self.load_saved_accounts()
+        if self.saved_accounts:
+            self.saved_accounts_label = ctk.CTkLabel(
+                self.main_frame,
+                text="📝 Tài khoản đã lưu:",
+                font=ctk.CTkFont(size=11, weight="bold"),
+                text_color=("gray70", "gray40")
+            )
+            self.saved_accounts_label.grid(row=3, column=0, padx=40, sticky="w", pady=(0, 8))
+            
+            self.saved_accounts_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
+            self.saved_accounts_frame.grid(row=4, column=0, padx=40, sticky="ew", pady=(0, 15))
+            
+            for account_email in self.saved_accounts[:3]:  # Tối đa 3 tài khoản
+                btn = ctk.CTkButton(
+                    self.saved_accounts_frame,
+                    text=f"👤 {account_email}",
+                    command=lambda email=account_email: self.use_saved_account(email),
+                    height=35,
+                    font=ctk.CTkFont(size=11),
+                    fg_color=("#e8f5e9", "#1e3a1e"),
+                    text_color=("#2e8b57", "#4a9e4a"),
+                    hover_color=("#d4f1d4", "#2e5a2e"),
+                    corner_radius=8
+                )
+                btn.pack(fill="x", pady=3)
+            
+            # Nút xóa tất cả tài khoản lưu
+            self.clear_accounts_btn = ctk.CTkButton(
+                self.main_frame,
+                text="🗑️ Xóa tài khoản đã lưu",
+                command=self.clear_saved_accounts,
+                height=25,
+                font=ctk.CTkFont(size=9),
+                fg_color="transparent",
+                border_width=1,
+                border_color=("gray70", "gray50"),
+                text_color=("gray70", "gray50"),
+                hover_color=("#ffebee", "#3e1a1a")
+            )
+            self.clear_accounts_btn.grid(row=5, column=0, padx=40, sticky="e", pady=(0, 15))
+            
+            input_row = 6
+        else:
+            input_row = 3
         
         # Frame chứa các input
         self.inputs_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
-        self.inputs_frame.grid(row=3, column=0, padx=40, sticky="ew")
+        self.inputs_frame.grid(row=input_row, column=0, padx=40, sticky="ew")
         
         # Email input với icon
         self.email_frame = ctk.CTkFrame(self.inputs_frame, fg_color="transparent")
@@ -116,7 +168,7 @@ class LoginScreen(ctk.CTkFrame):
             fg_color=("#2e8b57", "#3cb371"),
             hover_color=("#1e6b47", "#2e9b67")
         )
-        self.login_button.grid(row=4, column=0, padx=40, pady=(10, 15), sticky="ew")
+        self.login_button.grid(row=input_row+1, column=0, padx=40, pady=(10, 15), sticky="ew")
         
         # Loading indicator
         self.loading_label = ctk.CTkLabel(
@@ -128,7 +180,7 @@ class LoginScreen(ctk.CTkFrame):
         
         # Frame chứa các nút phụ
         self.buttons_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
-        self.buttons_frame.grid(row=5, column=0, pady=(0, 30))
+        self.buttons_frame.grid(row=input_row+2, column=0, pady=(0, 30))
         
         self.register_button = ctk.CTkButton(
             self.buttons_frame, 
@@ -165,11 +217,58 @@ class LoginScreen(ctk.CTkFrame):
             font=ctk.CTkFont(size=10),
             text_color="orange"
         )
-        self.status_label.grid(row=6, column=0, pady=(0, 10))
+        self.status_label.grid(row=input_row+3, column=0, pady=(0, 10))
         
         # Bind events
         self.email_entry.bind("<Return>", lambda e: self.password_entry.focus())
         self.password_entry.bind("<Return>", lambda e: self.login())
+    
+    def load_saved_accounts(self):
+        """Tải danh sách tài khoản đã lưu"""
+        try:
+            if os.path.exists(self.SAVED_ACCOUNTS_FILE):
+                with open(self.SAVED_ACCOUNTS_FILE, 'r') as f:
+                    data = json.load(f)
+                    return data.get("accounts", [])
+        except Exception as e:
+            print(f"Error loading saved accounts: {e}")
+        return []
+    
+    def save_account(self, email):
+        """Lưu tài khoản đã dùng"""
+        try:
+            accounts = self.load_saved_accounts()
+            
+            # Đưa email vừa dùng lên đầu
+            if email in accounts:
+                accounts.remove(email)
+            accounts.insert(0, email)
+            
+            # Giữ tối đa 5 tài khoản
+            accounts = accounts[:5]
+            
+            with open(self.SAVED_ACCOUNTS_FILE, 'w') as f:
+                json.dump({"accounts": accounts}, f)
+        except Exception as e:
+            print(f"Error saving account: {e}")
+    
+    def clear_saved_accounts(self):
+        """Xóa tất cả tài khoản đã lưu"""
+        try:
+            if os.path.exists(self.SAVED_ACCOUNTS_FILE):
+                os.remove(self.SAVED_ACCOUNTS_FILE)
+            messagebox.showinfo("Thành công", "Đã xóa tất cả tài khoản đã lưu")
+            # Tải lại trang
+            self.master.master.show_login()
+        except Exception as e:
+            messagebox.showerror("Lỗi", f"Lỗi khi xóa: {e}")
+    
+    def use_saved_account(self, email):
+        """Sử dụng tài khoản đã lưu"""
+        self.email_entry.delete(0, 'end')
+        self.email_entry.insert(0, email)
+        self.password_entry.focus()
+
         
     def toggle_password_visibility(self):
         """Toggle mật khẩu hiển thị"""
@@ -185,13 +284,17 @@ class LoginScreen(ctk.CTkFrame):
     
     def show_loading(self, show):
         """Hiển thị/ẩn loading indicator"""
+        # Check if widgets still exist
+        if not self.winfo_exists():
+            return
+        
         if show:
-            self.login_button.configure(state="disabled", text="ĐANG XỬ LÝ...")
-            self.loading_label.grid(row=4, column=0, pady=(5, 0))
+            if self.login_button.winfo_exists():
+                self.login_button.configure(state="disabled", text="ĐANG XỰ LÝ...")
             self.update_idletasks()
         else:
-            self.login_button.configure(state="normal", text="ĐĂNG NHẬP")
-            self.loading_label.grid_forget()
+            if self.login_button.winfo_exists():
+                self.login_button.configure(state="normal", text="ĐĂNG NHẬP")
     
     def update_status(self, message, is_error=False):
         """Cập nhật status message"""
@@ -226,6 +329,8 @@ class LoginScreen(ctk.CTkFrame):
                 "password": password
             })
             self.show_loading(False)
+            # Lưu tài khoản khi đăng nhập thành công
+            self.save_account(email)
             self.login_success_callback(response.user)
         except Exception as e:
             self.show_loading(False)

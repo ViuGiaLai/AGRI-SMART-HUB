@@ -1,6 +1,13 @@
+# -*- coding: utf-8 -*-
 import customtkinter as ctk
-from ui.login_screen import LoginScreen
 from ui.dashboard import DashboardFrame
+from ui.transaction_frame import TransactionFrame
+from ui.farmer_frame import FarmerFrame
+from ui.grading_rules_frame import GradingRulesFrame
+from ui.my_products_frame import MyProductsFrame
+from ui.login_screen import LoginScreen
+from database.client import get_supabase
+from database.db_manager import DatabaseManager
 from tkinter import messagebox
 from datetime import datetime
 import json
@@ -16,8 +23,9 @@ class MainApp(ctk.CTk):
         
         # Cấu hình cửa sổ chính
         self.title("GASH - Gia Lai Agri-Smart Hub")
-        self.geometry("1200x700")
-        self.minsize(800, 600)
+        # Use a much larger default window
+        self.geometry("1600x900")
+        self.minsize(1200, 800)
         
         # Center window on screen
         self.center_window()
@@ -26,6 +34,11 @@ class MainApp(ctk.CTk):
         self.current_user = None
         self.current_frame = None
         self.frames = {}  # Lưu trữ các frame đã tạo
+        # Database manager
+        try:
+            self.db = DatabaseManager(get_supabase())
+        except Exception:
+            self.db = None
         
         # Tạo header bar
         self.create_header()
@@ -49,11 +62,16 @@ class MainApp(ctk.CTk):
     def center_window(self):
         """Căn giữa cửa sổ trên màn hình"""
         self.update_idletasks()
-        width = self.winfo_width()
-        height = self.winfo_height()
+        # If width/height are not yet calculated, fall back to the requested geometry
+        width = self.winfo_width() or int(self.winfo_reqwidth() or 1366)
+        height = self.winfo_height() or int(self.winfo_reqheight() or 800)
         x = (self.winfo_screenwidth() // 2) - (width // 2)
         y = (self.winfo_screenheight() // 2) - (height // 2)
-        self.geometry(f'{width}x{height}+{x}+{y}')
+        try:
+            self.geometry(f'{width}x{height}+{x}+{y}')
+        except Exception:
+            # fallback: just center using requested geometry
+            self.geometry(f'1600x900+{x}+{y}')
     
     def create_header(self):
         """Tạo header bar với thông tin người dùng"""
@@ -108,6 +126,22 @@ class MainApp(ctk.CTk):
             button_hover_color="#219a52"
         )
         self.theme_switch.pack(side="left", padx=(0, 15))
+        
+        # Fullscreen button
+        self.fullscreen_btn = ctk.CTkButton(
+            self.header_right,
+            text="⛶ Toàn màn hình",
+            command=self.toggle_fullscreen,
+            width=100,
+            height=30,
+            fg_color="transparent",
+            border_width=1,
+            border_color="white",
+            text_color="white",
+            hover_color=("#27ae60", "#2ecc71"),
+            font=ctk.CTkFont(size=10)
+        )
+        self.fullscreen_btn.pack(side="left", padx=(0, 15))
         
         # Logout button (ẩn ban đầu)
         self.logout_btn = ctk.CTkButton(
@@ -181,10 +215,11 @@ class MainApp(ctk.CTk):
         # Menu items
         self.menu_items = [
             {"icon": "📊", "text": "Dashboard", "command": self.show_dashboard, "frame": "dashboard"},
+            {"icon": "👨‍🌾", "text": "Quản lý nông dân", "command": self.show_farmer_management, "frame": "farmers"},
+            {"icon": "📦", "text": "Sản phẩm", "command": self.show_my_products, "frame": "products"},
+            {"icon": "⚙️", "text": "Quy tắc trừ lùi", "command": self.show_grading_rules, "frame": "rules"},
+            {"icon": "📋", "text": "Giao dịch", "command": self.show_transaction_management, "frame": "transactions"},
             {"icon": "📈", "text": "Phân tích thị trường", "command": self.show_market_analysis, "frame": "market"},
-            {"icon": "📋", "text": "Quản lý đơn hàng", "command": self.show_order_management, "frame": "orders"},
-            {"icon": "👥", "text": "Quản lý khách hàng", "command": self.show_customer_management, "frame": "customers"},
-            {"icon": "📦", "text": "Quản lý kho", "command": self.show_inventory, "frame": "inventory"},
             {"icon": "📄", "text": "Báo cáo", "command": self.show_reports, "frame": "reports"},
             {"icon": "⚙️", "text": "Cài đặt", "command": self.show_settings, "frame": "settings"}
         ]
@@ -216,6 +251,20 @@ class MainApp(ctk.CTk):
                 self.active_menu = name
             else:
                 btn.configure(fg_color="transparent", text_color=("#333333", "#ffffff"))
+    
+    def toggle_fullscreen(self):
+        """Chuyển đổi chế độ toàn màn hình"""
+        self.is_fullscreen = getattr(self, 'is_fullscreen', False)
+        if not self.is_fullscreen:
+            self.state('zoomed')
+            self.fullscreen_btn.configure(text="⛶ Thoát toàn màn hình")
+            self.is_fullscreen = True
+        else:
+            self.state('normal')
+            self.geometry("1600x900")
+            self.fullscreen_btn.configure(text="⛶ Toàn màn hình")
+            self.is_fullscreen = False
+
     
     def update_datetime(self):
         """Cập nhật thời gian thực"""
@@ -385,21 +434,59 @@ class MainApp(ctk.CTk):
         # Auto close after 3 seconds
         welcome_msg.after(3000, welcome_msg.destroy)
     
-    def show_dashboard(self, frame_name="dashboard"):
+    def show_dashboard(self):
         """Hiển thị Dashboard"""
         # Clear main content
         for widget in self.main_content.winfo_children():
             widget.destroy()
         
-        # Create and show dashboard frame
-        if "dashboard" not in self.frames:
-            self.frames["dashboard"] = DashboardFrame(
-                self.main_content,
-                user=self.current_user
-            )
-        
+        # Always recreate dashboard frame to avoid widget destruction issues
+        self.frames["dashboard"] = DashboardFrame(
+            self.main_content,
+            db_manager=self.db,
+            user_id=self.current_user['id']
+        )
         self.frames["dashboard"].pack(fill="both", expand=True)
         self.highlight_menu("dashboard")
+    
+    def show_farmer_management(self):
+        """Hiển thị quản lý nông dân"""
+        for widget in self.main_content.winfo_children():
+            widget.destroy()
+        
+        self.frames["farmers"] = FarmerFrame(
+            self.main_content,
+            db_manager=self.db,
+            user_id=self.current_user['id']
+        )
+        self.frames["farmers"].pack(fill="both", expand=True)
+        self.highlight_menu("farmers")
+    
+    def show_my_products(self):
+        """Hiển thị danh sách sản phẩm"""
+        for widget in self.main_content.winfo_children():
+            widget.destroy()
+        
+        self.frames["products"] = MyProductsFrame(
+            self.main_content,
+            db_manager=self.db,
+            user_id=self.current_user['id']
+        )
+        self.frames["products"].pack(fill="both", expand=True)
+        self.highlight_menu("products")
+    
+    def show_grading_rules(self):
+        """Hiển thị cấu hình quy tắc trừ lùi"""
+        for widget in self.main_content.winfo_children():
+            widget.destroy()
+        
+        self.frames["rules"] = GradingRulesFrame(
+            self.main_content,
+            db_manager=self.db,
+            user_id=self.current_user['id']
+        )
+        self.frames["rules"].pack(fill="both", expand=True)
+        self.highlight_menu("rules")
     
     def show_market_analysis(self):
         """Hiển thị phân tích thị trường"""
@@ -417,53 +504,20 @@ class MainApp(ctk.CTk):
         
         self.highlight_menu("market")
     
-    def show_order_management(self):
-        """Hiển thị quản lý đơn hàng"""
+    def show_transaction_management(self):
+        """Hiển thị quản lý giao dịch"""
         for widget in self.main_content.winfo_children():
             widget.destroy()
         
-        # TODO: Create OrderManagementFrame
-        label = ctk.CTkLabel(
+        self.frames["transactions"] = TransactionFrame(
             self.main_content,
-            text="📋 Quản lý đơn hàng\n(Đang phát triển)",
-            font=ctk.CTkFont(size=24, weight="bold"),
-            justify="center"
+            db_manager=self.db,
+            user_id=self.current_user['id']
         )
-        label.pack(expand=True)
-        
-        self.highlight_menu("orders")
+        self.frames["transactions"].pack(fill="both", expand=True)
+        self.highlight_menu("transactions")
     
-    def show_customer_management(self):
-        """Hiển thị quản lý khách hàng"""
-        for widget in self.main_content.winfo_children():
-            widget.destroy()
-        
-        # TODO: Create CustomerManagementFrame
-        label = ctk.CTkLabel(
-            self.main_content,
-            text="👥 Quản lý khách hàng\n(Đang phát triển)",
-            font=ctk.CTkFont(size=24, weight="bold"),
-            justify="center"
-        )
-        label.pack(expand=True)
-        
-        self.highlight_menu("customers")
-    
-    def show_inventory(self):
-        """Hiển thị quản lý kho"""
-        for widget in self.main_content.winfo_children():
-            widget.destroy()
-        
-        # TODO: Create InventoryFrame
-        label = ctk.CTkLabel(
-            self.main_content,
-            text="📦 Quản lý kho\n(Đang phát triển)",
-            font=ctk.CTkFont(size=24, weight="bold"),
-            justify="center"
-        )
-        label.pack(expand=True)
-        
-        self.highlight_menu("inventory")
+
     
     def show_reports(self):
         """Hiển thị báo cáo"""
