@@ -1,5 +1,5 @@
 name: Build Windows EXE
-
+ 
 on:
   release:
     types: [published]
