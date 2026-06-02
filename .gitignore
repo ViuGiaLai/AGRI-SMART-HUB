@@ -1,0 +1,37 @@
+# Python
+
+**pycache**/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual Environment
+
+venv/
+.env/
+
+# Environment variables
+
+.env
+.env.local
+
+# Build files
+
+build/
+dist/
+*.spec
+
+# VSCode
+
+.vscode/
+
+# User/session data
+
+.saved_accounts.json
+.session
+user_preferences.json
+
+# OS files
+
+.DS_Store
+Thumbs.db

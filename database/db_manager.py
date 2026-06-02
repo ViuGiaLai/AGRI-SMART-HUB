@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # database/db_manager.py
 from typing import Optional, List, Dict, Any
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from supabase import Client
 from .models import *
 import logging
@@ -326,12 +326,13 @@ class DatabaseManager:
             return None
     
     def get_market_prices(self, product_name: str, days: int = 30) -> List[Dict]:
-        """Lấy giá thị trường trong khoảng thời gian"""
+        """Lấy giá thị trường trong N ngày gần nhất (tính từ hôm nay lùi về)."""
         try:
+            start_date = (date.today() - timedelta(days=max(days - 1, 0))).isoformat()
             result = self.supabase.table('market_prices')\
                 .select('*')\
                 .eq('product_name', product_name)\
-                .gte('log_date', date.today().isoformat())\
+                .gte('log_date', start_date)\
                 .order('log_date', desc=True)\
                 .limit(days)\
                 .execute()
@@ -339,6 +340,14 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Error getting market prices: {e}")
             return []
+
+    def get_market_prices_any(self, product_names: List[str], days: int = 7) -> List[Dict]:
+        """Thử nhiều tên sản phẩm (Cà phê / cà phê) và trả về bộ có dữ liệu."""
+        for name in product_names:
+            rows = self.get_market_prices(name, days=days)
+            if rows:
+                return rows
+        return []
     
     # ============ STATISTICS & REPORTS ============
     

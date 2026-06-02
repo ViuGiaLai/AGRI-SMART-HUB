@@ -19,13 +19,32 @@ load_dotenv()
 
 class GeminiConfig:
     """Lớp cấu hình cho Gemini API"""
-    
-    # Các model có sẵn
+
+    # Alias → model ID (cập nhật 2026 — gemini-1.5-* đã ngừng trên v1beta)
     MODELS = {
-        "flash": "gemini-1.5-flash",
-        "pro": "gemini-1.5-pro",
-        "flash_8b": "gemini-1.5-flash-8b",
-        "pro_002": "gemini-1.5-pro-002"
+        "flash": "gemini-2.5-flash",
+        "pro": "gemini-2.5-pro",
+        "flash_lite": "gemini-2.0-flash-lite",
+        "flash_latest": "gemini-flash-latest",
+        "pro_latest": "gemini-pro-latest",
+        # alias cũ (tương thích .env / tài liệu cũ)
+        "flash_8b": "gemini-2.0-flash-lite",
+        "pro_002": "gemini-2.5-pro",
+    }
+
+    # Thử lần lượt nếu model chính trả 404
+    FALLBACK_MODEL_IDS = (
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
+        "gemini-flash-latest",
+    )
+
+    # Model 1.5 đã gỡ khỏi API v1beta (2025+)
+    DEPRECATED_MODEL_MAP = {
+        "gemini-1.5-flash": "gemini-2.5-flash",
+        "gemini-1.5-flash-8b": "gemini-2.0-flash-lite",
+        "gemini-1.5-pro": "gemini-2.5-pro",
+        "gemini-1.5-pro-002": "gemini-2.5-pro",
     }
     
     # Cấu hình mặc định
@@ -34,6 +53,13 @@ class GeminiConfig:
         "top_p": 0.95,
         "top_k": 40,
         "max_output_tokens": 2048,
+    }
+
+    ADVISOR_CONFIG = {
+        "temperature": 0.35,
+        "top_p": 0.9,
+        "top_k": 40,
+        "max_output_tokens": 4096,
     }
     
     def __init__(self):
@@ -56,24 +82,60 @@ class GeminiConfig:
             logger.error(f"Lỗi cấu hình Gemini API: {e}")
             self.configured = False
     
-    def get_model(self, model_type: Optional[str] = None) -> Optional[genai.GenerativeModel]:
-        """Lấy model Gemini với cấu hình"""
+    def resolve_model_id(self, model_type: Optional[str] = None) -> str:
+        """Chuyển alias / tên đầy đủ thành model ID."""
+        key = (model_type or self.model_name or "flash").strip()
+        if key.startswith("models/"):
+            key = key[7:]
+        if key in self.MODELS:
+            return self.MODELS[key]
+        # Cho phép GEMINI_MODEL=gemini-2.5-flash trực tiếp
+        if key in self.DEPRECATED_MODEL_MAP:
+            mapped = self.DEPRECATED_MODEL_MAP[key]
+            logger.info("Model cũ '%s' → '%s'", key, mapped)
+            return mapped
+        if key.startswith("gemini-") or key.startswith("gemma-"):
+            return key
+        return self.MODELS["flash"]
+
+    def get_model(
+        self,
+        model_type: Optional[str] = None,
+        generation_config: Optional[Dict] = None,
+    ) -> Optional[genai.GenerativeModel]:
+        """Lấy model Gemini với cấu hình; thử fallback nếu model không tồn tại."""
         if not self.configured:
             return None
-        
-        model_key = model_type or self.model_name
-        model_id = self.MODELS.get(model_key, self.MODELS["flash"])
-        
-        try:
-            model = genai.GenerativeModel(
-                model_id,
-                generation_config=self.DEFAULT_CONFIG
-            )
-            logger.info(f"Đã khởi tạo model: {model_id}")
-            return model
-        except Exception as e:
-            logger.error(f"Lỗi khởi tạo model {model_id}: {e}")
-            return None
+
+        gen_cfg = generation_config or self.DEFAULT_CONFIG
+        primary = self.resolve_model_id(model_type)
+        candidates = [primary]
+        for mid in self.FALLBACK_MODEL_IDS:
+            if mid not in candidates:
+                candidates.append(mid)
+
+        last_error = None
+        for model_id in candidates:
+            try:
+                model = genai.GenerativeModel(
+                    model_id,
+                    generation_config=gen_cfg,
+                )
+                if model_id != primary:
+                    logger.warning(
+                        "Model '%s' không khả dụng, dùng fallback: %s",
+                        primary, model_id,
+                    )
+                else:
+                    logger.info("Đã khởi tạo model: %s", model_id)
+                self._active_model_id = model_id
+                return model
+            except Exception as e:
+                last_error = e
+                logger.debug("Không khởi tạo được %s: %s", model_id, e)
+
+        logger.error("Không khởi tạo được model Gemini: %s", last_error)
+        return None
 
 # Khởi tạo cấu hình toàn cục
 gemini_config = GeminiConfig()
@@ -131,6 +193,71 @@ Hãy đảm bảo:
         if len(self.conversation_history) > self.max_history:
             self.conversation_history.pop(0)
     
+    @staticmethod
+    def _extract_response_text(response) -> str:
+        try:
+            return (response.text or "").strip()
+        except ValueError:
+            pass
+        parts = []
+        for cand in getattr(response, "candidates", []) or []:
+            content = getattr(cand, "content", None)
+            if not content:
+                continue
+            for part in getattr(content, "parts", []) or []:
+                t = getattr(part, "text", None)
+                if t:
+                    parts.append(t)
+        if parts:
+            return "\n".join(parts).strip()
+        return "Không nhận được nội dung từ AI. Vui lòng thử lại."
+
+    def _build_advisor_prompt(self, question: str, context: Dict[str, Any]) -> str:
+        """Prompt chuyên biệt — bắt buộc trích số từ JSON, không bịa."""
+        quality = context.get("chat_luong_du_lieu", {})
+        missing = []
+        if not quality.get("co_gia_ca_phe") and "cà phê" in question.lower():
+            missing.append("giá cà phê 7 ngày")
+        if not quality.get("co_gia_tieu") and "tiêu" in question.lower():
+            missing.append("giá hồ tiêu 7 ngày")
+
+        missing_note = ""
+        if missing:
+            missing_note = (
+                f"\nTHIẾU DỮ LIỆU: {', '.join(missing)}. "
+                "Phải nói rõ 'chưa có dữ liệu giá trong hệ thống' — KHÔNG được đoán giá."
+            )
+
+        return f"""Bạn là cố vấn thị trường nông sản cho đại lý thu mua tại Gia Lai (GASH).
+
+QUY TẮC BẮT BUỘC:
+1. Mọi con số PHẢI lấy từ JSON bên dưới; ghi rõ đơn vị (kg, VNĐ, VNĐ/kg).
+2. KHÔNG gọi kg là "đơn vị" chung chung; KHÔNG bịa doanh thu hay giá.
+3. Nếu thiếu dữ liệu giá → nói thẳng, chỉ phân tích tồn kho/giao dịch có sẵn.
+4. Hoàn thành ĐỦ 4 mục, không dừng giữa chừng.
+5. Mức độ tin cậy: Cao / Trung bình / Thấp (giải thích 1 câu).
+
+ĐỊNH DẠNG TRẢ LỜI (tiếng Việt):
+📌 Tóm tắt (2-3 câu)
+
+📊 Số liệu từ hệ thống
+- Liệt kê số cụ thể từ JSON (giá, tồn, giao dịch…)
+
+📈 Phân tích xu hướng
+- Dựa trên xu_huong / bien_dong_pct nếu có; nếu không có giá → ghi "chưa đủ dữ liệu giá"
+
+💡 Khuyến nghị
+- Hành động cụ thể cho đại lý (mua/bán/giữ, thu nợ…)
+
+⚠️ Rủi ro & độ tin cậy
+{missing_note}
+
+DỮ LIỆU JSON (nguồn: {context.get('nguon', 'GASH')}, lúc {context.get('thoi_diem', '')}):
+{json.dumps(context, ensure_ascii=False, indent=2)}
+
+CÂU HỎI: {question}
+"""
+
     def _get_chat_context(self) -> str:
         """Lấy context từ lịch sử hội thoại"""
         if not self.conversation_history:
@@ -147,13 +274,37 @@ Hãy đảm bảo:
         wait=wait_exponential(multiplier=1, min=2, max=10),
         reraise=True
     )
-    def ask_with_retry(self, model, prompt: str) -> str:
-        """Gửi yêu cầu với cơ chế retry khi lỗi"""
+    def ask_with_retry(self, model, prompt: str, model_type: Optional[str] = None) -> str:
+        """Gửi yêu cầu với retry; tự đổi model nếu gặp 404."""
+        active = getattr(self.config, "_active_model_id", None)
+        tried = {active} if active else set()
+
         try:
             response = model.generate_content(prompt)
-            return response.text
+            return GeminiAgent._extract_response_text(response)
         except Exception as e:
-            logger.error(f"Lỗi khi gọi Gemini API (attempt): {e}")
+            err = str(e)
+            if "404" not in err or "not found" not in err.lower():
+                logger.error("Lỗi khi gọi Gemini API (attempt): %s", e)
+                raise
+
+            for model_id in self.config.FALLBACK_MODEL_IDS:
+                if model_id in tried:
+                    continue
+                tried.add(model_id)
+                try:
+                    fb = genai.GenerativeModel(
+                        model_id,
+                        generation_config=self.config.DEFAULT_CONFIG,
+                    )
+                    response = fb.generate_content(prompt)
+                    self.config._active_model_id = model_id
+                    logger.warning("Model lỗi 404 — đã chuyển sang: %s", model_id)
+                    return GeminiAgent._extract_response_text(response)
+                except Exception as fb_err:
+                    logger.debug("Fallback %s thất bại: %s", model_id, fb_err)
+
+            logger.error("Lỗi khi gọi Gemini API (attempt): %s", e)
             raise
     
     def ask_gemini(
@@ -198,7 +349,9 @@ Hãy đảm bảo:
             result["error"] = "Không thể khởi tạo model Gemini"
             return result
         
-        result["model_used"] = model_type or self.config.model_name
+        result["model_used"] = getattr(
+            self.config, "_active_model_id", None
+        ) or self.config.resolve_model_id(model_type)
         
         # Xây dựng prompt hoàn chỉnh
         if is_market_analysis:
@@ -218,7 +371,7 @@ Hãy đảm bảo:
         
         try:
             # Gọi API với retry mechanism
-            response_text = self.ask_with_retry(model, final_prompt)
+            response_text = self.ask_with_retry(model, final_prompt, model_type)
             
             result["success"] = True
             result["response"] = response_text
@@ -237,11 +390,62 @@ Hãy đảm bảo:
             # Xử lý các lỗi đặc biệt
             if "API key not valid" in error_msg:
                 result["error"] = "API Key không hợp lệ. Vui lòng kiểm tra lại."
+            elif "404" in error_msg and "not found" in error_msg.lower():
+                result["error"] = (
+                    "Model Gemini không còn hỗ trợ. Đặt GEMINI_MODEL=flash trong .env "
+                    "(dùng gemini-2.5-flash) và khởi động lại ứng dụng."
+                )
             elif "quota" in error_msg.lower():
                 result["error"] = "Đã vượt quá giới hạn sử dụng API. Vui lòng thử lại sau."
             elif "safety" in error_msg.lower():
                 result["error"] = "Nội dung bị chặn do vi phạm chính sách bảo mật."
         
+        return result
+
+    def ask_advisor(
+        self,
+        question: str,
+        context: Dict[str, Any],
+        model_type: Optional[str] = None,
+        use_history: bool = True,
+    ) -> Dict[str, Any]:
+        """Hỏi AI Advisor với ngữ cảnh có cấu trúc — không bọc prompt kép."""
+        result = {
+            "success": False,
+            "response": "",
+            "error": None,
+            "model_used": None,
+            "timestamp": datetime.now().isoformat(),
+        }
+        if not self.config.configured:
+            result["error"] = "Chưa cấu hình GEMINI_API_KEY"
+            return result
+
+        model = self.config.get_model(
+            model_type, generation_config=GeminiConfig.ADVISOR_CONFIG,
+        )
+        if not model:
+            result["error"] = "Không thể khởi tạo model Gemini"
+            return result
+
+        result["model_used"] = getattr(self.config, "_active_model_id", None)
+        final_prompt = self._build_advisor_prompt(question, context)
+
+        if use_history:
+            history_context = self._get_chat_context()
+            if history_context:
+                final_prompt = history_context + "\n" + final_prompt
+            self._add_to_history("user", question)
+
+        try:
+            text = self.ask_with_retry(model, final_prompt, model_type)
+            result["success"] = True
+            result["response"] = text
+            if use_history:
+                self._add_to_history("assistant", text)
+        except Exception as e:
+            result["error"] = str(e)
+
         return result
     
     def analyze_market_price(

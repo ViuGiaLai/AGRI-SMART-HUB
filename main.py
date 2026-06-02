@@ -6,6 +6,11 @@ from ui.farmer_frame import FarmerFrame
 from ui.grading_rules_frame import GradingRulesFrame
 from ui.my_products_frame import MyProductsFrame
 from ui.login_screen import LoginScreen
+from ui.ai_advisor_frame import AIAdvisorFrame
+from ui.report_frame import ReportFrame
+from ui.inventory_management import InventoryManagementFrame
+from core.notification_system import add_alerts_to_dashboard
+from ui import theme as T
 from database.client import get_supabase
 from database.db_manager import DatabaseManager
 from tkinter import messagebox
@@ -13,9 +18,9 @@ from datetime import datetime
 import json
 import os
 
-# Cấu hình theme cho CustomTkinter
-ctk.set_appearance_mode("system")  # Modes: "system", "light", "dark"
-ctk.set_default_color_theme("green")  # Themes: "blue", "dark-blue", "green"
+# Digital Forest & Wealth — light mode mặc định cho độ tương phản tốt
+ctk.set_appearance_mode("light")
+ctk.set_default_color_theme("green")
 
 class MainApp(ctk.CTk):
     def __init__(self):
@@ -33,22 +38,26 @@ class MainApp(ctk.CTk):
         # Biến quản lý trạng thái
         self.current_user = None
         self.current_frame = None
-        self.frames = {}  # Lưu trữ các frame đã tạo
+        self.frames = {}
+        self.notification_system = None
         # Database manager
         try:
             self.db = DatabaseManager(get_supabase())
         except Exception:
             self.db = None
         
-        # Tạo header bar
-        self.create_header()
-        
-        # Tạo sidebar (sẽ hiển thị sau khi login)
+        # Shell: sidebar | (topbar + content)
+        self.body = ctk.CTkFrame(self, fg_color="transparent", corner_radius=0)
+        self.body.pack(fill="both", expand=True)
+
         self.sidebar = None
-        
-        # Tạo main content area
-        self.main_content = ctk.CTkFrame(self, fg_color="transparent")
-        self.main_content.pack(side="right", fill="both", expand=True, padx=(0, 0))
+        self.right_shell = ctk.CTkFrame(self.body, fg_color="transparent", corner_radius=0)
+        self.right_shell.pack(side="right", fill="both", expand=True)
+
+        self.topbar = None
+        self.main_content = ctk.CTkFrame(
+            self.right_shell, fg_color=T.BG_MAIN, corner_radius=0
+        )
         
         # Khởi tạo menu trạng thái chưa đăng nhập
         self.show_login()
@@ -73,198 +82,135 @@ class MainApp(ctk.CTk):
             # fallback: just center using requested geometry
             self.geometry(f'1600x900+{x}+{y}')
     
-    def create_header(self):
-        """Tạo header bar với thông tin người dùng"""
-        self.header = ctk.CTkFrame(
-            self, 
-            height=60, 
+    def create_topbar(self):
+        """Topbar: tên đại lý, thời gian thực, đăng xuất."""
+        if self.topbar and self.topbar.winfo_exists():
+            self.topbar.destroy()
+
+        self.topbar = ctk.CTkFrame(
+            self.right_shell,
+            height=T.TOPBAR_HEIGHT,
             corner_radius=0,
-            fg_color=("#2ecc71", "#1a5d1a")
+            fg_color=T.BG_TOPBAR,
         )
-        self.header.pack(fill="x", side="top")
-        self.header.pack_propagate(False)
-        
-        # Logo và tiêu đề
-        self.header_left = ctk.CTkFrame(self.header, fg_color="transparent")
-        self.header_left.pack(side="left", padx=20, pady=10)
-        
-        self.logo_label = ctk.CTkLabel(
-            self.header_left,
-            text="🌾",
-            font=("Segoe UI Emoji", 28)
+        self.topbar.pack(fill="x", side="top")
+        self.topbar.pack_propagate(False)
+
+        left = ctk.CTkFrame(self.topbar, fg_color="transparent")
+        left.pack(side="left", padx=24, pady=12)
+        ctk.CTkLabel(left, text="🌾", font=("Segoe UI Emoji", 22)).pack(side="left")
+        self.agent_title = ctk.CTkLabel(
+            left,
+            text="Gia Lai Agri-Smart Hub",
+            font=ctk.CTkFont(size=16, weight="bold"),
+            text_color=T.TEXT_ON_DARK,
         )
-        self.logo_label.pack(side="left", padx=(0, 10))
-        
-        self.title_label = ctk.CTkLabel(
-            self.header_left,
-            text="GASH - Gia Lai Agri-Smart Hub",
-            font=ctk.CTkFont(size=18, weight="bold"),
-            text_color="white"
-        )
-        self.title_label.pack(side="left")
-        
-        # Header right (user info)
-        self.header_right = ctk.CTkFrame(self.header, fg_color="transparent")
-        self.header_right.pack(side="right", padx=20, pady=10)
-        
-        # User info (sẽ cập nhật sau khi login)
-        self.user_label = ctk.CTkLabel(
-            self.header_right,
-            text="",
-            font=ctk.CTkFont(size=12),
-            text_color="white"
-        )
-        self.user_label.pack(side="left", padx=(0, 15))
-        
-        # Theme switcher
-        self.theme_switch = ctk.CTkSwitch(
-            self.header_right,
-            text="🌙 Dark Mode",
-            command=self.toggle_theme,
-            progress_color="#27ae60",
-            button_color="#27ae60",
-            button_hover_color="#219a52"
-        )
-        self.theme_switch.pack(side="left", padx=(0, 15))
-        
-        # Fullscreen button
-        self.fullscreen_btn = ctk.CTkButton(
-            self.header_right,
-            text="⛶ Toàn màn hình",
-            command=self.toggle_fullscreen,
-            width=100,
-            height=30,
-            fg_color="transparent",
-            border_width=1,
-            border_color="white",
-            text_color="white",
-            hover_color=("#27ae60", "#2ecc71"),
-            font=ctk.CTkFont(size=10)
-        )
-        self.fullscreen_btn.pack(side="left", padx=(0, 15))
-        
-        # Logout button (ẩn ban đầu)
-        self.logout_btn = ctk.CTkButton(
-            self.header_right,
-            text="Đăng xuất",
-            command=self.logout,
-            width=80,
-            height=30,
-            fg_color="transparent",
-            border_width=1,
-            border_color="white",
-            text_color="white",
-            hover_color=("#e74c3c", "#c0392b")
-        )
-        
-        # DateTime label
+        self.agent_title.pack(side="left", padx=(8, 0))
+
+        right = ctk.CTkFrame(self.topbar, fg_color="transparent")
+        right.pack(side="right", padx=20, pady=10)
+
         self.datetime_label = ctk.CTkLabel(
-            self.header_right,
-            text="",
-            font=ctk.CTkFont(size=11),
-            text_color="white"
+            right, text="", font=ctk.CTkFont(size=12), text_color="#bdc3c7",
         )
-        self.datetime_label.pack(side="left", padx=(15, 0))
-        
-        # Cập nhật thời gian thực
+        self.datetime_label.pack(side="left", padx=(0, 20))
+
+        self.theme_switch = ctk.CTkSwitch(
+            right, text="Dark", command=self.toggle_theme,
+            width=44, progress_color=T.PRIMARY, button_color=T.PRIMARY,
+        )
+        self.theme_switch.pack(side="left", padx=(0, 12))
+
+        self.user_label = ctk.CTkLabel(
+            right, text="", font=ctk.CTkFont(size=13, weight="bold"),
+            text_color=T.TEXT_ON_DARK,
+        )
+        self.user_label.pack(side="left", padx=(0, 12))
+
+        self.logout_btn = ctk.CTkButton(
+            right, text="Đăng xuất", command=self.logout,
+            width=100, height=36, corner_radius=T.CORNER_RADIUS_SM,
+            fg_color=T.DANGER, hover_color="#c0392b",
+            font=ctk.CTkFont(size=12, weight="bold"),
+        )
         self.update_datetime()
     
     def create_sidebar(self):
-        """Tạo sidebar menu sau khi đăng nhập"""
+        """Sidebar xanh đen — điều hướng chính."""
         if self.sidebar and self.sidebar.winfo_exists():
             self.sidebar.destroy()
-        
+
         self.sidebar = ctk.CTkFrame(
-            self, 
-            width=250, 
-            corner_radius=0,
-            fg_color=("#f8f9fa", "#2b2b2b")
+            self.body, width=T.SIDEBAR_WIDTH, corner_radius=0, fg_color=T.BG_SIDEBAR,
         )
-        self.sidebar.pack(side="left", fill="y", padx=(0, 0))
+        self.sidebar.pack(side="left", fill="y")
         self.sidebar.pack_propagate(False)
-        
-        # User profile section
-        self.profile_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent")
-        self.profile_frame.pack(fill="x", padx=20, pady=(30, 20))
-        
-        self.avatar_label = ctk.CTkLabel(
-            self.profile_frame,
-            text="👤",
-            font=("Segoe UI Emoji", 48)
-        )
-        self.avatar_label.pack()
-        
+
+        brand = ctk.CTkFrame(self.sidebar, fg_color="transparent")
+        brand.pack(fill="x", padx=16, pady=(24, 20))
+        ctk.CTkLabel(brand, text="GASH", font=ctk.CTkFont(size=22, weight="bold"), text_color=T.PRIMARY).pack(anchor="w")
+        ctk.CTkLabel(
+            brand, text="Agri-Smart Hub", font=ctk.CTkFont(size=11), text_color="#95a5a6",
+        ).pack(anchor="w")
+
         if self.current_user:
-            email = self.current_user.get('email', 'user@example.com')
-            name = email.split('@')[0]
-            self.user_name_label = ctk.CTkLabel(
-                self.profile_frame,
-                text=name.title(),
-                font=ctk.CTkFont(size=16, weight="bold")
-            )
-            self.user_name_label.pack(pady=(5, 0))
-            
-            self.user_email_label = ctk.CTkLabel(
-                self.profile_frame,
-                text=email,
-                font=ctk.CTkFont(size=11),
-                text_color=("gray60", "gray50")
-            )
-            self.user_email_label.pack()
-        
-        # Menu items
+            email = self.current_user.get("email", "")
+            name = email.split("@")[0].title()
+            pf = ctk.CTkFrame(self.sidebar, fg_color=T.SECONDARY_LIGHT, corner_radius=T.CORNER_RADIUS_SM)
+            pf.pack(fill="x", padx=12, pady=(0, 16))
+            ctk.CTkLabel(pf, text="👤", font=("Segoe UI Emoji", 28)).pack(pady=(10, 0))
+            ctk.CTkLabel(pf, text=name, font=ctk.CTkFont(size=13, weight="bold"), text_color=T.TEXT_ON_DARK).pack()
+            ctk.CTkLabel(pf, text="Đại lý thu mua", font=ctk.CTkFont(size=10), text_color="#95a5a6").pack(pady=(0, 10))
+
         self.menu_items = [
             {"icon": "📊", "text": "Dashboard", "command": self.show_dashboard, "frame": "dashboard"},
-            {"icon": "👨‍🌾", "text": "Quản lý nông dân", "command": self.show_farmer_management, "frame": "farmers"},
-            {"icon": "📦", "text": "Sản phẩm", "command": self.show_my_products, "frame": "products"},
-            {"icon": "⚙️", "text": "Quy tắc trừ lùi", "command": self.show_grading_rules, "frame": "rules"},
             {"icon": "📋", "text": "Giao dịch", "command": self.show_transaction_management, "frame": "transactions"},
-            {"icon": "📈", "text": "Phân tích thị trường", "command": self.show_market_analysis, "frame": "market"},
+            {"icon": "👨‍🌾", "text": "Nông dân", "command": self.show_farmer_management, "frame": "farmers"},
+            {"icon": "📦", "text": "Quản lý kho", "command": self.show_inventory_management, "frame": "inventory_mgmt"},
+            {"icon": "🏷️", "text": "Sản phẩm", "command": self.show_my_products, "frame": "products"},
+            {"icon": "🤖", "text": "AI Advisor", "command": self.show_ai_advisor, "frame": "ai_advisor"},
             {"icon": "📄", "text": "Báo cáo", "command": self.show_reports, "frame": "reports"},
-            {"icon": "⚙️", "text": "Cài đặt", "command": self.show_settings, "frame": "settings"}
+            {"icon": "⚙️", "text": "Cài đặt", "command": self.show_settings, "frame": "settings"},
         ]
-        
+
         self.menu_buttons = {}
+        nav = ctk.CTkFrame(self.sidebar, fg_color="transparent")
+        nav.pack(fill="both", expand=True, padx=8)
         for item in self.menu_items:
             btn = ctk.CTkButton(
-                self.sidebar,
-                text=f"{item['icon']}  {item['text']}",
-                command=item['command'],
+                nav,
+                text=f"  {item['icon']}   {item['text']}",
+                command=item["command"],
                 anchor="w",
-                height=45,
+                height=44,
+                corner_radius=T.CORNER_RADIUS_SM,
                 font=ctk.CTkFont(size=13),
                 fg_color="transparent",
-                text_color=("#333333", "#ffffff"),
-                hover_color=("#e8f5e9", "#2e2e2e")
+                text_color="#ecf0f1",
+                hover_color=T.SECONDARY_LIGHT,
             )
-            btn.pack(fill="x", padx=15, pady=2)
-            self.menu_buttons[item['frame']] = btn
-        
-        # Highlight active menu
+            btn.pack(fill="x", pady=3, padx=4)
+            self.menu_buttons[item["frame"]] = btn
+
+        ctk.CTkButton(
+            self.sidebar, text="  ⚙️  Quy tắc trừ lùi",
+            command=self.show_grading_rules, anchor="w", height=40,
+            corner_radius=T.CORNER_RADIUS_SM, fg_color="transparent",
+            text_color="#7f8c8d", hover_color=T.SECONDARY_LIGHT,
+            font=ctk.CTkFont(size=11),
+        ).pack(fill="x", padx=12, pady=(0, 16))
+
         self.active_menu = None
     
     def highlight_menu(self, frame_name):
         """Highlight menu item đang active"""
         for name, btn in self.menu_buttons.items():
             if name == frame_name:
-                btn.configure(fg_color=("#27ae60", "#2ecc71"), text_color="white")
+                btn.configure(fg_color=T.PRIMARY, text_color=T.TEXT_ON_DARK)
                 self.active_menu = name
             else:
-                btn.configure(fg_color="transparent", text_color=("#333333", "#ffffff"))
+                btn.configure(fg_color="transparent", text_color="#ecf0f1")
     
-    def toggle_fullscreen(self):
-        """Chuyển đổi chế độ toàn màn hình"""
-        self.is_fullscreen = getattr(self, 'is_fullscreen', False)
-        if not self.is_fullscreen:
-            self.state('zoomed')
-            self.fullscreen_btn.configure(text="⛶ Thoát toàn màn hình")
-            self.is_fullscreen = True
-        else:
-            self.state('normal')
-            self.geometry("1600x900")
-            self.fullscreen_btn.configure(text="⛶ Toàn màn hình")
-            self.is_fullscreen = False
-
     
     def update_datetime(self):
         """Cập nhật thời gian thực"""
@@ -278,10 +224,8 @@ class MainApp(ctk.CTk):
         current = ctk.get_appearance_mode()
         if current == "Light":
             ctk.set_appearance_mode("dark")
-            self.theme_switch.configure(text="☀️ Light Mode")
         else:
             ctk.set_appearance_mode("light")
-            self.theme_switch.configure(text="🌙 Dark Mode")
         
         # Lưu preference
         self.save_preference("theme", ctk.get_appearance_mode())
@@ -314,12 +258,11 @@ class MainApp(ctk.CTk):
                 # Apply theme preference
                 theme = prefs.get("theme", "light")
                 ctk.set_appearance_mode(theme)
-                if theme == "dark":
-                    self.theme_switch.configure(text="☀️ Light Mode")
-                    self.theme_switch.select()
-                else:
-                    self.theme_switch.configure(text="🌙 Dark Mode")
-                    self.theme_switch.deselect()
+                if hasattr(self, "theme_switch") and self.theme_switch.winfo_exists():
+                    if theme == "dark":
+                        self.theme_switch.select()
+                    else:
+                        self.theme_switch.deselect()
         except Exception as e:
             print(f"Error loading preferences: {e}")
     
@@ -361,15 +304,14 @@ class MainApp(ctk.CTk):
         for widget in self.main_content.winfo_children():
             widget.destroy()
         
-        # Hide sidebar và logout button
         if self.sidebar and self.sidebar.winfo_exists():
             self.sidebar.pack_forget()
-        
-        self.logout_btn.pack_forget()
-        self.user_label.configure(text="")
-        
-        # Show login frame
-        self.login_frame = LoginScreen(self.main_content, self.on_login_success)
+        if self.topbar and self.topbar.winfo_exists():
+            self.topbar.pack_forget()
+        self.main_content.pack_forget()
+
+        self.right_shell.pack(fill="both", expand=True)
+        self.login_frame = LoginScreen(self.right_shell, self.on_login_success)
         self.login_frame.pack(fill="both", expand=True)
     
     def on_login_success(self, user):
@@ -377,15 +319,16 @@ class MainApp(ctk.CTk):
         self.current_user = {"email": user.email, "id": user.id}
         print(f"✅ Đăng nhập thành công: {user.email}")
         
-        # Cập nhật header
-        self.user_label.configure(text=f"👋 Xin chào, {user.email.split('@')[0]}")
-        self.logout_btn.pack(side="left", padx=(0, 15))
-        
-        # Tạo sidebar
-        self.create_sidebar()
-        
-        # Xóa login frame và hiển thị dashboard
         self.login_frame.destroy()
+
+        self.create_sidebar()
+        self.create_topbar()
+        self.main_content.pack(fill="both", expand=True)
+
+        agent = user.email.split("@")[0].title()
+        self.user_label.configure(text=f"Đại lý: {agent}")
+        self.agent_title.configure(text=f"Đại lý {agent}")
+
         self.show_dashboard()
         
         # Lưu session
@@ -434,23 +377,52 @@ class MainApp(ctk.CTk):
         # Auto close after 3 seconds
         welcome_msg.after(3000, welcome_msg.destroy)
     
+    def _stop_notifications(self):
+        """Dừng giám sát cảnh báo khi rời Dashboard."""
+        if self.notification_system:
+            self.notification_system.stop_monitoring()
+            self.notification_system = None
+
     def show_dashboard(self):
-        """Hiển thị Dashboard"""
-        # Clear main content
+        """Hiển thị Dashboard kèm cảnh báo thông minh."""
+        self._stop_notifications()
         for widget in self.main_content.winfo_children():
             widget.destroy()
-        
-        # Always recreate dashboard frame to avoid widget destruction issues
+
         self.frames["dashboard"] = DashboardFrame(
             self.main_content,
             db_manager=self.db,
-            user_id=self.current_user['id']
+            user_id=self.current_user["id"],
         )
         self.frames["dashboard"].pack(fill="both", expand=True)
+
+        if self.db:
+            self.notification_system = add_alerts_to_dashboard(
+                self.frames["dashboard"],
+                self.db,
+                self.current_user["id"],
+                root_window=self,
+            )
+
         self.highlight_menu("dashboard")
+
+    def show_inventory_management(self):
+        """Hiển thị quản lý tồn kho."""
+        self._stop_notifications()
+        for widget in self.main_content.winfo_children():
+            widget.destroy()
+
+        self.frames["inventory_mgmt"] = InventoryManagementFrame(
+            self.main_content,
+            db_manager=self.db,
+            user_id=self.current_user["id"],
+        )
+        self.frames["inventory_mgmt"].pack(fill="both", expand=True)
+        self.highlight_menu("inventory_mgmt")
     
     def show_farmer_management(self):
         """Hiển thị quản lý nông dân"""
+        self._stop_notifications()
         for widget in self.main_content.winfo_children():
             widget.destroy()
         
@@ -464,6 +436,7 @@ class MainApp(ctk.CTk):
     
     def show_my_products(self):
         """Hiển thị danh sách sản phẩm"""
+        self._stop_notifications()
         for widget in self.main_content.winfo_children():
             widget.destroy()
         
@@ -477,6 +450,7 @@ class MainApp(ctk.CTk):
     
     def show_grading_rules(self):
         """Hiển thị cấu hình quy tắc trừ lùi"""
+        self._stop_notifications()
         for widget in self.main_content.winfo_children():
             widget.destroy()
         
@@ -506,6 +480,7 @@ class MainApp(ctk.CTk):
     
     def show_transaction_management(self):
         """Hiển thị quản lý giao dịch"""
+        self._stop_notifications()
         for widget in self.main_content.winfo_children():
             widget.destroy()
         
@@ -519,24 +494,39 @@ class MainApp(ctk.CTk):
     
 
     
-    def show_reports(self):
-        """Hiển thị báo cáo"""
+    def show_ai_advisor(self):
+        """Hiển thị AI Advisor"""
+        self._stop_notifications()
         for widget in self.main_content.winfo_children():
             widget.destroy()
         
-        # TODO: Create ReportsFrame
-        label = ctk.CTkLabel(
+        self.frames["ai_advisor"] = AIAdvisorFrame(
             self.main_content,
-            text="📄 Báo cáo & Thống kê\n(Đang phát triển)",
-            font=ctk.CTkFont(size=24, weight="bold"),
-            justify="center"
+            db_manager=self.db,
+            user_id=self.current_user["id"],
         )
-        label.pack(expand=True)
+        self.frames["ai_advisor"].pack(fill="both", expand=True)
+        self.highlight_menu("ai_advisor")
+    
+
+    
+    def show_reports(self):
+        """Hiển thị báo cáo"""
+        self._stop_notifications()
+        for widget in self.main_content.winfo_children():
+            widget.destroy()
         
+        self.frames["reports"] = ReportFrame(
+            self.main_content,
+            db_manager=self.db,
+            user_id=self.current_user["id"],
+        )
+        self.frames["reports"].pack(fill="both", expand=True)
         self.highlight_menu("reports")
     
     def show_settings(self):
         """Hiển thị cài đặt"""
+        self._stop_notifications()
         for widget in self.main_content.winfo_children():
             widget.destroy()
         
@@ -555,7 +545,7 @@ class MainApp(ctk.CTk):
         """Đăng xuất"""
         # Xác nhận đăng xuất
         if messagebox.askyesno("Xác nhận", "Bạn có chắc muốn đăng xuất?"):
-            # Clear session
+            self._stop_notifications()
             self.clear_session()
             
             # Reset current user
@@ -571,8 +561,9 @@ class MainApp(ctk.CTk):
             messagebox.showinfo("Thành công", "Đã đăng xuất thành công!")
     
     def on_closing(self):
-        """Xử lý khi đóng ứng dụng"""
+        """Dừng notification system khi đóng app."""
         if messagebox.askokcancel("Thoát", "Bạn có chắc muốn thoát chương trình?"):
+            self._stop_notifications()
             self.save_preference("window_size", self.geometry())
             self.destroy()
 
