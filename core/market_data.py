@@ -7,6 +7,7 @@ from typing import Dict, Optional, List
 import json
 import logging
 import os
+import customtkinter as ctk
 from dotenv import load_dotenv
 from database.db_manager import DatabaseManager
 
@@ -14,22 +15,112 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+class MarketDataFetcher:
+    """Market Data Fetcher - Lấy dữ liệu thị trường nông sản"""
+    
+    def __init__(self):
+        # Headers quan trọng để tránh bị chặn (403 Forbidden)
+        self.headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+            'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Referer': 'https://www.google.com/'
+        }
+    
+    def fetch_coffee_price(self):
+        """Lấy giá cà phê - Nguồn: Giacaphe.com"""
+        url = "https://giacaphe.com/gia-ca-phe-noi-dia/"
+        try:
+            response = requests.get(url, headers=self.headers, timeout=15)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.content, 'html.parser')
+                # Tìm giá Gia Lai trong bảng
+                price_row = soup.find('td', string=lambda t: t and 'Gia Lai' in t)
+                if price_row:
+                    price_val = price_row.find_next_sibling('td').text
+                    return int(price_val.replace('.', '').strip())
+            return None
+        except Exception as e:
+            logger.error(f"Lỗi lấy giá cà phê: {e}")
+            return None
+    
+    def fetch_pepper_price(self):
+        """Lấy giá hồ tiêu - Nguồn: Tintaynguyen.com"""
+        url = "https://tintaynguyen.com/gia-ho-tieu/"
+        try:
+            response = requests.get(url, headers=self.headers, timeout=15)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.content, 'html.parser')
+                # Tìm giá tại Gia Lai
+                td_gialai = soup.find('td', string=lambda t: t and 'Gia Lai' in t)
+                if td_gialai:
+                    price_text = td_gialai.find_next_sibling('td').text
+                    return int(price_text.replace('.', '').replace('đ', '').strip())
+            return None
+        except Exception as e:
+            logger.error(f"Lỗi lấy giá hồ tiêu: {e}")
+            return None
+    
+    def fetch_exchange_rate(self):
+        """Tỷ giá USD/VND - Sử dụng API"""
+        url = "https://api.exchangerate-api.com/v4/latest/USD"
+        try:
+            response = requests.get(url, timeout=10)
+            if response.status_code == 200:
+                return response.json().get('rates', {}).get('VND', 25450)
+            return 25450
+        except:
+            return 25450
+    
+    def diagnose(self):
+        """Công cụ chẩn đoán lỗi"""
+        urls = [
+            "https://giacaphe.com/gia-ca-phe-noi-dia/",
+            "https://tintaynguyen.com/gia-ho-tieu/",
+        ]
+        
+        results = {}
+        for url in urls:
+            try:
+                res = requests.get(url, headers=self.headers, timeout=5)
+                results[url] = f"Status: {res.status_code}"
+            except Exception as e:
+                results[url] = f"Error: {e}"
+        
+        return results
+
 class MarketDataManager:
     """Quản lý dữ liệu thị trường từ nhiều nguồn"""
     
     def __init__(self, db_manager: DatabaseManager):
         self.db = db_manager
+        self.fetcher = MarketDataFetcher()
         
         self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+            'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Referer': 'https://www.google.com/'
         }
         
-        # Các API endpoints (có thể thay thế bằng API thực tế)
+        # Các API endpoints thực tế
         self.apis = {
-            "coffee_london": "https://api.example.com/london-coffee",  # Thay bằng API thật
-            "coffee_ny": "https://api.example.com/ny-coffee",
-            "pepper": "https://api.example.com/pepper-price",
-            "exchange_rate": "https://api.exchangerate-api.com/v4/latest/USD"
+            # Coffee
+            "coffee_vietnam": "https://giacaphe.com/gia-ca-phe-noi-dia/",
+            "coffee_london": "https://giacaphe.com/gia-ca-phe-truc-tuyen/london/",
+            "coffee_ico": "https://www.ico.org/prices/new-prices",
+            # Pepper
+            "pepper_vietnam": "https://tintaynguyen.com/gia-ho-tieu/",
+            "pepper_global": "https://www.indexmundi.com/agricultural/?country=vn&commodity=black-pepper",
+            # Cashew
+            "cashew_vietnam": "https://vietnambusiness.gov.vn/",
+            # Rubber
+            "rubber_vietnam": "https://www.vnr.org.vn/",
+            # Cassava
+            "cassava_vietnam": "https://tintaynguyen.com/gia-san-xay/",
+            # Exchange rate
+            "exchange_rate": "https://api.exchangerate-api.com/v4/latest/USD",
+            "vietcombank": "https://www.vietcombank.com.vn/",
         }
     
     def fetch_coffee_prices(self) -> Dict:
@@ -57,6 +148,52 @@ class MarketDataManager:
             "black_pepper": 180000,  # VND/kg
             "white_pepper": 220000,  # VND/kg
             "global_price": 4200,    # USD/ton
+            "updated_at": datetime.now().isoformat()
+        }
+    
+    def fetch_cashew_prices(self) -> Dict:
+        """Lấy giá điều"""
+        return {
+            "cashew_kernel": 250000,  # VND/kg
+            "raw_cashew": 15000,     # VND/kg
+            "global_price": 3500,     # USD/ton
+            "updated_at": datetime.now().isoformat()
+        }
+    
+    def fetch_rubber_prices(self) -> Dict:
+        """Lấy giá cao su"""
+        return {
+            "rubber_scr20": 45000,    # VND/kg
+            "rubper_scr5": 55000,    # VND/kg
+            "latex": 35000,        # VND/kg
+            "global_price": 1600,   # USD/ton
+            "updated_at": datetime.now().isoformat()
+        }
+    
+    def fetch_cassava_prices(self) -> Dict:
+        """Lấy giá sắn"""
+        return {
+            "cassava_chip": 6500,   # VND/kg
+            "cassava_starch": 12000, # VND/kg
+            "updated_at": datetime.now().isoformat()
+        }
+    
+    def fetch_corn_prices(self) -> Dict:
+        """Lấy giá ngô"""
+        return {
+            "corn_yellow": 6500,    # VND/kg
+            "corn_white": 7000,     # VND/kg
+            "global_price": 250,     # USD/ton
+            "updated_at": datetime.now().isoformat()
+        }
+    
+    def fetch_rice_prices(self) -> Dict:
+        """Lấy giá lúa gạo"""
+        return {
+            "rice_ir504": 12000,    # VND/kg
+            "rice_jasmine": 18000,   # VND/kg
+            "rice_st25": 22000,    # VND/kg
+            "global_price": 550,     # USD/ton
             "updated_at": datetime.now().isoformat()
         }
     
@@ -100,6 +237,50 @@ class MarketDataManager:
                     "price_global_london": prices.get("global_price", 0),
                     "log_date": date.today().isoformat()
                 }
+            elif product_name == "Điều":
+                prices = manual_data or self.fetch_cashew_prices()
+                
+                price_data = {
+                    "product_name": "Điều",
+                    "price_local": prices.get("raw_cashew", 0),
+                    "price_global_london": prices.get("global_price", 0),
+                    "log_date": date.today().isoformat()
+                }
+            elif product_name == "Cao su":
+                prices = manual_data or self.fetch_rubber_prices()
+                
+                price_data = {
+                    "product_name": "Cao su",
+                    "price_local": prices.get("rubber_scr20", 0),
+                    "price_global_london": prices.get("global_price", 0),
+                    "log_date": date.today().isoformat()
+                }
+            elif product_name == "Sắn":
+                prices = manual_data or self.fetch_cassava_prices()
+                
+                price_data = {
+                    "product_name": "Sắn",
+                    "price_local": prices.get("cassava_chip", 0),
+                    "log_date": date.today().isoformat()
+                }
+            elif product_name == "Ngô":
+                prices = manual_data or self.fetch_corn_prices()
+                
+                price_data = {
+                    "product_name": "Ngô",
+                    "price_local": prices.get("corn_yellow", 0),
+                    "price_global_london": prices.get("global_price", 0),
+                    "log_date": date.today().isoformat()
+                }
+            elif product_name == "Lúa gạo":
+                prices = manual_data or self.fetch_rice_prices()
+                
+                price_data = {
+                    "product_name": "Lúa gạo",
+                    "price_local": prices.get("rice_ir504", 0),
+                    "price_global_london": prices.get("global_price", 0),
+                    "log_date": date.today().isoformat()
+                }
             else:
                 return False
             
@@ -117,6 +298,11 @@ class MarketDataManager:
         results = {
             "coffee": self.update_market_prices("Cà phê"),
             "pepper": self.update_market_prices("Hồ tiêu"),
+            "cashew": self.update_market_prices("Điều"),
+            "rubber": self.update_market_prices("Cao su"),
+            "cassava": self.update_market_prices("Sắn"),
+            "corn": self.update_market_prices("Ngô"),
+            "rice": self.update_market_prices("Lúa gạo"),
             "timestamp": datetime.now().isoformat()
         }
         return results
@@ -184,31 +370,15 @@ class MarketDataManager:
     def fetch_realtime_coffee(self):
         """Lấy giá cà phê thật từ Giacaphe.com"""
         try:
-            url = "https://giacaphe.com/gia-ca-phe-noi-dia/"
-            response = requests.get(url, headers=self.headers, timeout=15)
-            soup = BeautifulSoup(response.content, 'html.parser')
-            
-            # Lấy giá tại Gia Lai (thường nằm trong bảng giá nội địa)
-            table = soup.find('table', {'id': 'giacaphe'})
-            rows = table.find_all('tr')
-            
-            gialai_price = 0
-            for row in rows:
-                if "Gia Lai" in row.text:
-                    gialai_price = int(row.find_all('td')[1].text.replace('.', '').replace(',', ''))
-                    break
-            
-            # Lấy giá London (Robusta)
-            london_url = "https://giacaphe.com/gia-ca-phe-truc-tuyen/london/"
-            res_london = requests.get(london_url, headers=self.headers, timeout=15)
-            soup_london = BeautifulSoup(res_london.content, 'html.parser')
-            london_price = float(soup_london.find('span', {'id': 'last_price'}).text.replace(',', ''))
-
-            return {
-                "domestic_gialai": gialai_price,
-                "robusta_london": london_price,
-                "updated_at": datetime.now().isoformat()
-            }
+            # Sử dụng fetcher
+            price = self.fetcher.fetch_coffee_price()
+            if price:
+                return {
+                    "domestic_gialai": price,
+                    "robusta_london": 0,
+                    "updated_at": datetime.now().isoformat()
+                }
+            return None
         except Exception as e:
             logger.error(f"Lỗi lấy giá cà phê: {e}")
             return None
@@ -216,18 +386,14 @@ class MarketDataManager:
     def fetch_realtime_pepper(self):
         """Lấy giá hồ tiêu từ Tintaynguyen.com"""
         try:
-            url = "https://tintaynguyen.com/gia-ho-tieu/"
-            response = requests.get(url, headers=self.headers, timeout=15)
-            soup = BeautifulSoup(response.content, 'html.parser')
-            
-            # Tìm giá tại Gia Lai
-            price_box = soup.find('td', text='Gia Lai').find_next_sibling('td')
-            pepper_price = int(price_box.text.replace('.', '').replace('đ', '').strip())
-            
-            return {
-                "black_pepper": pepper_price,
-                "updated_at": datetime.now().isoformat()
-            }
+            # Sử dụng fetcher
+            price = self.fetcher.fetch_pepper_price()
+            if price:
+                return {
+                    "black_pepper": price,
+                    "updated_at": datetime.now().isoformat()
+                }
+            return None
         except Exception as e:
             logger.error(f"Lỗi lấy giá hồ tiêu: {e}")
             return None
@@ -235,11 +401,8 @@ class MarketDataManager:
     def fetch_exchange_rate(self):
         """Lấy tỷ giá USD/VND thật từ API"""
         try:
-            api_key = os.getenv("EXCHANGE_RATE_API_KEY", "YOUR_FREE_KEY")
-            url = f"https://v6.exchangerate-api.com/v6/{api_key}/latest/USD"
-            response = requests.get(url, timeout=10)
-            if response.status_code == 200:
-                return response.json().get('conversion_rates', {}).get('VND', 25500)
+            # Sử dụng fetcher
+            return self.fetcher.fetch_exchange_rate()
         except:
             return 25500
 

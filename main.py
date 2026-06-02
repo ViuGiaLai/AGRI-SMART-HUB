@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
+import os
 import customtkinter as ctk
+from PIL import Image
 from ui.dashboard import DashboardFrame
 from ui.transaction_frame import TransactionFrame
 from ui.farmer_frame import FarmerFrame
@@ -8,6 +10,7 @@ from ui.my_products_frame import MyProductsFrame
 from ui.login_screen import LoginScreen
 from ui.ai_advisor_frame import AIAdvisorFrame
 from ui.report_frame import ReportFrame
+from ui.market_frame import MarketFrame
 from ui.inventory_management import InventoryManagementFrame
 from core.notification_system import add_alerts_to_dashboard
 from ui import theme as T
@@ -121,6 +124,16 @@ class MainApp(ctk.CTk):
         )
         self.theme_switch.pack(side="left", padx=(0, 12))
 
+        # User avatar
+        try:
+            avatar_path = os.path.join(os.path.dirname(__file__), "assets", "GASH-VIU.png")
+            avatar_img = ctk.CTkImage(Image.open(avatar_path), size=(28, 28))
+            self.user_avatar = ctk.CTkLabel(right, image=avatar_img, text="")
+            self.user_avatar.pack(side="left", padx=(0, 8))
+        except:
+            self.user_avatar = ctk.CTkLabel(right, text="👤", font=ctk.CTkFont(size=18))
+            self.user_avatar.pack(side="left", padx=(0, 8))
+
         self.user_label = ctk.CTkLabel(
             right, text="", font=ctk.CTkFont(size=13, weight="bold"),
             text_color=T.TEXT_ON_DARK,
@@ -148,10 +161,17 @@ class MainApp(ctk.CTk):
 
         brand = ctk.CTkFrame(self.sidebar, fg_color="transparent")
         brand.pack(fill="x", padx=16, pady=(24, 20))
-        ctk.CTkLabel(brand, text="GASH", font=ctk.CTkFont(size=22, weight="bold"), text_color=T.PRIMARY).pack(anchor="w")
-        ctk.CTkLabel(
-            brand, text="Agri-Smart Hub", font=ctk.CTkFont(size=11), text_color="#95a5a6",
-        ).pack(anchor="w")
+        
+        # App logo
+        try:
+            logo_path = os.path.join(os.path.dirname(__file__), "assets", "GASH-VIU.png")
+            logo_img = ctk.CTkImage(Image.open(logo_path), size=(40, 40))
+            ctk.CTkLabel(brand, image=logo_img, text="").pack(anchor="w")
+        except Exception as e:
+            print(f"Không load được logo: {e}")
+            ctk.CTkLabel(brand, text="🌱", font=ctk.CTkFont(size=28)).pack(anchor="w")
+        
+        ctk.CTkLabel(brand, text="AGRI-SMART HUB", font=ctk.CTkFont(size=14, weight="bold"), text_color=T.PRIMARY).pack(anchor="w", pady=(5, 0))
 
         if self.current_user:
             email = self.current_user.get("email", "")
@@ -467,14 +487,12 @@ class MainApp(ctk.CTk):
         for widget in self.main_content.winfo_children():
             widget.destroy()
         
-        # TODO: Create MarketAnalysisFrame
-        label = ctk.CTkLabel(
+        self.frames["market"] = MarketFrame(
             self.main_content,
-            text="📈 Phân tích thị trường\n(Đang phát triển)",
-            font=ctk.CTkFont(size=24, weight="bold"),
-            justify="center"
+            db_manager=self.db,
+            user_id=self.current_user['id']
         )
-        label.pack(expand=True)
+        self.frames["market"].pack(fill="both", expand=True)
         
         self.highlight_menu("market")
     

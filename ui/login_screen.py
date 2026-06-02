@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
+import os
 import customtkinter as ctk
 from tkinter import messagebox
+from PIL import Image
 import re
 from database.client import get_supabase
 import json
-import os
 
 class LoginScreen(ctk.CTkFrame):
     SAVED_ACCOUNTS_FILE = ".saved_accounts.json"
@@ -27,12 +28,14 @@ class LoginScreen(ctk.CTkFrame):
         self.main_frame.grid_rowconfigure(9, weight=1)
         self.main_frame.grid_columnconfigure(0, weight=1)
         
-        # Icon/Logo (có thể thay bằng image)
-        self.logo_label = ctk.CTkLabel(
-            self.main_frame, 
-            text="🌾", 
-            font=("Segoe UI Emoji", 48)
-        )
+        # Icon/Logo
+        try:
+            logo_path = os.path.join(os.path.dirname(__file__), "..", "assets", "GASH-VIU.png")
+            logo_img = ctk.CTkImage(Image.open(logo_path), size=(80, 80))
+            self.logo_label = ctk.CTkLabel(self.main_frame, image=logo_img, text="")
+        except Exception as e:
+            print(f"Không load được logo: {e}")
+            self.logo_label = ctk.CTkLabel(self.main_frame, text="🌾", font=("Segoe UI Emoji", 48))
         self.logo_label.grid(row=0, column=0, pady=(30, 10))
         
         # Tiêu đề

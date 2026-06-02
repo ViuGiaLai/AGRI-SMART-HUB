@@ -318,9 +318,6 @@ class AgriAgentToolkit:
         self._emit("search_farmers", {"keyword": keyword}, f"{len(matched)} nông dân", result)
         return result
 
-  # Registry
-    TOOL_REGISTRY: Dict[str, str] = {}  # filled below
-
     def get_callables(self) -> List[Callable]:
         """Danh sách hàm cho Gemini automatic function calling."""
         return [

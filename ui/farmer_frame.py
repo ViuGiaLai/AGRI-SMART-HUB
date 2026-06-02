@@ -32,18 +32,19 @@ class FarmerFrame(ctk.CTkFrame):
         )
         self.title_label.pack(pady=15)
         
-        # Main container
+        # Main container with grid
         self.main_container = ctk.CTkFrame(self, fg_color="transparent")
         self.main_container.pack(fill="both", expand=True, padx=20, pady=10)
+        self.main_container.grid_columnconfigure(0, weight=0)  # Left fixed
+        self.main_container.grid_columnconfigure(1, weight=1)  # Right expands
         
-        # Left panel - Form
-        self.left_panel = ctk.CTkFrame(self.main_container, width=400, corner_radius=15)
-        self.left_panel.pack(side="left", fill="both", padx=(0, 10), pady=10)
-        self.left_panel.pack_propagate(False)
+        # Left panel - Form (fixed width)
+        self.left_panel = ctk.CTkFrame(self.main_container, width=350, corner_radius=15)
+        self.left_panel.grid(row=0, column=0, sticky="ns", padx=(0, 10), pady=10)
         
-        # Right panel - List
+        # Right panel - List (expands)
         self.right_panel = ctk.CTkFrame(self.main_container, corner_radius=15)
-        self.right_panel.pack(side="right", fill="both", expand=True, padx=(10, 0), pady=10)
+        self.right_panel.grid(row=0, column=1, sticky="nsew", padx=(10, 0), pady=10)
         
         self.create_form_panel()
         self.create_list_panel()
@@ -51,6 +52,9 @@ class FarmerFrame(ctk.CTkFrame):
     
     def create_form_panel(self):
         """Tạo panel nhập thông tin nông dân"""
+        # Configure left_panel grid
+        self.left_panel.grid_rowconfigure(1, weight=1)
+        
         # Form title
         self.form_title = ctk.CTkLabel(
             self.left_panel,
@@ -123,9 +127,13 @@ class FarmerFrame(ctk.CTkFrame):
     
     def create_list_panel(self):
         """Tạo panel danh sách nông dân"""
+        # Configure right_panel grid
+        self.right_panel.grid_rowconfigure(2, weight=1)
+        self.right_panel.grid_columnconfigure(0, weight=1)
+        
         # Search frame
         self.search_frame = ctk.CTkFrame(self.right_panel, fg_color="transparent")
-        self.search_frame.pack(fill="x", padx=15, pady=(15, 10))
+        self.search_frame.grid(row=0, column=0, sticky="ew", padx=15, pady=(15, 10))
         
         self.search_label = ctk.CTkLabel(self.search_frame, text="🔍 Tìm kiếm:", font=ctk.CTkFont(size=12))
         self.search_label.pack(side="left", padx=(0, 10))
@@ -146,9 +154,9 @@ class FarmerFrame(ctk.CTkFrame):
         )
         self.refresh_button.pack(side="right")
         
-        # Treeview frame
+        # Treeview frame (expands)
         self.tree_frame = ctk.CTkFrame(self.right_panel)
-        self.tree_frame.pack(fill="both", expand=True, padx=15, pady=(0, 15))
+        self.tree_frame.grid(row=2, column=0, sticky="nsew", padx=15, pady=(0, 15))
         
         # Scrollbar
         self.scrollbar = ttk.Scrollbar(self.tree_frame)
@@ -194,7 +202,7 @@ class FarmerFrame(ctk.CTkFrame):
     def create_debt_panel(self):
         """Tạo panel hiển thị tổng kết công nợ"""
         self.debt_frame = ctk.CTkFrame(self.right_panel, corner_radius=10, fg_color=("#f8f9fa", "#1a1a1a"))
-        self.debt_frame.pack(fill="x", padx=15, pady=(0, 15))
+        self.debt_frame.grid(row=1, column=0, sticky="ew", padx=15, pady=(0, 15))
         
         self.debt_title = ctk.CTkLabel(
             self.debt_frame,

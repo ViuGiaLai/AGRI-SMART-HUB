@@ -253,6 +253,26 @@ class AIAdvisorFrame(ctk.CTkFrame):
     def _scroll_chat(self):
         try:
             self.messages_area._parent_canvas.yview_moveto(1.0)
+            self.update_idletasks()
+        except Exception:
+            pass
+        
+        # Also schedule a delayed scroll to ensure it happens after UI updates
+        self.after(50, self._do_delayed_scroll)
+    
+    def _do_delayed_scroll(self):
+        try:
+            self.messages_area._parent_canvas.yview_moveto(1.0)
+            # Force update and scroll again after a short delay
+            self.after(100, self._force_scroll)
+        except Exception:
+            pass
+    
+    def _force_scroll(self):
+        """Force scroll to bottom"""
+        try:
+            self.messages_area._parent_canvas.yview_moveto(1.0)
+            self.update_idletasks()
         except Exception:
             pass
 

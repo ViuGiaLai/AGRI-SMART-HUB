@@ -28,12 +28,23 @@ class DashboardFrame(ctk.CTkFrame):
         # Page title
         header = ctk.CTkFrame(self, fg_color="transparent")
         header.grid(row=0, column=0, sticky="ew", padx=24, pady=(20, 8))
+        
+        # Logo
+        try:
+            from PIL import Image
+            import os
+            logo_path = os.path.join(os.path.dirname(__file__), "..", "assets", "GASH-VIU.png")
+            logo_img = ctk.CTkImage(Image.open(logo_path), size=(32, 32))
+            ctk.CTkLabel(header, image=logo_img, text="").pack(side="left")
+        except:
+            ctk.CTkLabel(header, text="📊", font=ctk.CTkFont(size=24)).pack(side="left")
+        
         ctk.CTkLabel(
             header,
             text="Dashboard",
             font=ctk.CTkFont(size=26, weight="bold"),
             text_color=T.TEXT_DARK,
-        ).pack(side="left")
+        ).pack(side="left", padx=(10, 0))
         ctk.CTkLabel(
             header,
             text="Tổng quan hoạt động đại lý",
