@@ -13,7 +13,7 @@ import io
 import re
 import logging
 from datetime import datetime
-from typing import List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any, Tuple
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from dotenv import load_dotenv
@@ -1246,18 +1246,21 @@ def delete_product(product_name):
 # TAB 6: AI ADVISOR
 # ──────────────────────────────────────────────
 
-def ai_chat(message: str, history: List[Tuple[str, str]]) -> Tuple[str, List[Tuple[str, str]]]:
+def ai_chat(message: str, history: List[Dict[str, str]]) -> Tuple[str, List[Dict[str, str]]]:
+    """Chat handler — returns list of dicts with 'role' and 'content' (Gradio 6.0 format)."""
     if not message or not message.strip():
         return "", history
 
     db = AppState.get_db()
     if not db:
-        history.append((message, "⚠️ **Database chưa kết nối.** Vui lòng cấu hình Settings trước."))
+        history.append({"role": "user", "content": message})
+        history.append({"role": "assistant", "content": "⚠️ **Database chưa kết nối.** Vui lòng cấu hình Settings trước."})
         return "", history
 
     user_id = AppState.ensure_user()
     if not user_id:
-        history.append((message, "⚠️ **Vui lòng đăng nhập để sử dụng AI Advisor.**"))
+        history.append({"role": "user", "content": message})
+        history.append({"role": "assistant", "content": "⚠️ **Vui lòng đăng nhập để sử dụng AI Advisor.**"})
         return "", history
 
     try:
@@ -1273,13 +1276,15 @@ def ai_chat(message: str, history: List[Tuple[str, str]]) -> Tuple[str, List[Tup
             from core.ai_engine import get_gemini_agent
             agent = get_gemini_agent()
             if not agent.config.configured:
-                history.append((message, "⚠️ **Chưa cấu hình API Key cho AI.**\n\nVào tab **Settings → AI & API** và nhập ít nhất một API key:\n- **GEMINI_API_KEY** (khuyên dùng)\n- **OPENROUTER_API_KEY**\n- **GROQ_API_KEY**"))
+                history.append({"role": "user", "content": message})
+                history.append({"role": "assistant", "content": "⚠️ **Chưa cấu hình API Key cho AI.**\n\nVào tab **Settings → AI & API** và nhập ít nhất một API key:\n- **GEMINI_API_KEY** (khuyên dùng)\n- **OPENROUTER_API_KEY**\n- **GROQ_API_KEY**"})
                 return "", history
             result = agent.ask_advisor(message, context)
             response = result.get("response", "") if result["success"] else f"❌ {result.get('error', 'Lỗi')}"
             if context_display and response:
                 response += f"\n\n---\n{context_display}"
-            history.append((message, response))
+            history.append({"role": "user", "content": message})
+            history.append({"role": "assistant", "content": response})
             return "", history
 
         agent = create_agri_agent(db, user_id)
@@ -1290,12 +1295,14 @@ def ai_chat(message: str, history: List[Tuple[str, str]]) -> Tuple[str, List[Tup
                 response += f"\n\n---\n{context_display}"
         else:
             response = f"❌ {result.get('error', 'Lỗi')}"
-        history.append((message, response))
+        history.append({"role": "user", "content": message})
+        history.append({"role": "assistant", "content": response})
         return "", history
 
     except Exception as e:
         logger.error(f"AI error: {e}")
-        history.append((message, f"❌ **Lỗi:** {str(e)}"))
+        history.append({"role": "user", "content": message})
+        history.append({"role": "assistant", "content": f"❌ **Lỗi:** {str(e)}"})
         return "", history
 
 
@@ -1538,53 +1545,6 @@ def _handle_logout() -> Tuple[str, str, str, str, str]:
 def build_app():
     with gr.Blocks(
         title="GASH - Gia Lai Agri-Smart Hub",
-        theme=gr.themes.Base(
-            primary_hue="green",
-            font=gr.themes.GoogleFont("Inter"),
-        ),
-        css=MEGA_CSS + LOGIN_CLEANUP_CSS,
-        head="""
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <link rel="preconnect" href="https://fonts.googleapis.com">
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-        <script>
-        // After login, force-hide login elements so they don't push menu down
-        // Using style.setProperty instead of remove() to preserve logout flow
-        (function() {
-            var checkAndClean = function() {
-                var loginEls = document.querySelectorAll('.login-page');
-                loginEls.forEach(function(el) {
-                    // Only apply if element is hidden (has hide class)
-                    if (el.classList.contains('hide') || el.classList.contains('hidden')) {
-                        // Set small size so it doesn't affect layout
-                        el.style.setProperty('display', 'none', 'important');
-                        el.style.setProperty('width', '0px', 'important');
-                        el.style.setProperty('height', '0px', 'important');
-                        el.style.setProperty('min-width', '0px', 'important');
-                        el.style.setProperty('min-height', '0px', 'important');
-                        el.style.setProperty('flex-grow', '0', 'important');
-                        el.style.setProperty('position', 'absolute', 'important');
-                        el.style.setProperty('overflow', 'hidden', 'important');
-                        el.style.setProperty('opacity', '0', 'important');
-                        el.style.setProperty('pointer-events', 'none', 'important');
-                        el.style.setProperty('margin', '0px', 'important');
-                        el.style.setProperty('padding', '0px', 'important');
-                    }
-                });
-            };
-            // Check periodically
-            var interval = setInterval(function() {
-                var mainApp = document.querySelector('[class*="app-wrapper"]');
-                if (mainApp && mainApp.style.display !== 'none' && window.getComputedStyle(mainApp).display !== 'none') {
-                    checkAndClean();
-                    clearInterval(interval);
-                }
-            }, 200);
-            // Stop after 10 seconds max
-            setTimeout(function() { clearInterval(interval); }, 10000);
-        })();
-        </script>
-        """
     ) as demo:
 
         # ──────── STATE ────────
@@ -2060,7 +2020,6 @@ def build_app():
                         height=450,
                         avatar_images=("🧑‍🌾", "🌿"),
                         show_label=False,
-                        type="tuples",
                         elem_classes="gr-chatbot",
                     )
                     with gr.Row():
@@ -2351,4 +2310,46 @@ if __name__ == "__main__":
         server_port=port,
         show_error=True,
         debug=False,
+        theme=gr.themes.Base(
+            primary_hue="green",
+            font=gr.themes.GoogleFont("Inter"),
+        ),
+        css=MEGA_CSS + LOGIN_CLEANUP_CSS,
+        head="""
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <script>
+        // After login, force-hide login elements so they don't push menu down
+        (function() {
+            var checkAndClean = function() {
+                var loginEls = document.querySelectorAll('.login-page');
+                loginEls.forEach(function(el) {
+                    if (el.classList.contains('hide') || el.classList.contains('hidden')) {
+                        el.style.setProperty('display', 'none', 'important');
+                        el.style.setProperty('width', '0px', 'important');
+                        el.style.setProperty('height', '0px', 'important');
+                        el.style.setProperty('min-width', '0px', 'important');
+                        el.style.setProperty('min-height', '0px', 'important');
+                        el.style.setProperty('flex-grow', '0', 'important');
+                        el.style.setProperty('position', 'absolute', 'important');
+                        el.style.setProperty('overflow', 'hidden', 'important');
+                        el.style.setProperty('opacity', '0', 'important');
+                        el.style.setProperty('pointer-events', 'none', 'important');
+                        el.style.setProperty('margin', '0px', 'important');
+                        el.style.setProperty('padding', '0px', 'important');
+                    }
+                });
+            };
+            var interval = setInterval(function() {
+                var mainApp = document.querySelector('[class*="app-wrapper"]');
+                if (mainApp && mainApp.style.display !== 'none' && window.getComputedStyle(mainApp).display !== 'none') {
+                    checkAndClean();
+                    clearInterval(interval);
+                }
+            }, 200);
+            setTimeout(function() { clearInterval(interval); }, 10000);
+        })();
+        </script>
+        """
     )
