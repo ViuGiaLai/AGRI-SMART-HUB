@@ -9,6 +9,12 @@ from typing import Any, Callable, Dict, List, Optional
 from database.db_manager import DatabaseManager
 from core.advisor_context import PRODUCT_ALIASES, _price_trend
 
+# Import WebMarketResearcher cho web research tool
+try:
+    from core.web_researcher import WebMarketResearcher
+except ImportError:
+    WebMarketResearcher = None
+
 StepCallback = Optional[Callable[[Dict[str, Any]], None]]
 
 
@@ -68,17 +74,35 @@ class AgriAgentToolkit:
     def get_market_price_trend(self, product_name: str = "Cà phê", days: int = 7) -> dict:
         """
         Lấy lịch sử giá và xu hướng thị trường cho một sản phẩm.
+        Hỗ trợ: Cà phê, Hồ tiêu, Sầu riêng, Lúa gạo, Cao su, Điều nhân, Cacao, Mắc ca.
 
         Args:
-            product_name: Tên sản phẩm, ví dụ 'Cà phê' hoặc 'Hồ tiêu'.
+            product_name: Tên sản phẩm.
             days: Số ngày lịch sử giá (mặc định 7).
 
         Returns:
             dict: gia_hom_nay, xu_huong, bien_dong_pct, lich_su
         """
-        aliases = PRODUCT_ALIASES.get("coffee", ["Cà phê", "cà phê"])
-        if "tiêu" in product_name.lower() or "tieu" in product_name.lower():
-            aliases = PRODUCT_ALIASES.get("pepper", ["Hồ tiêu", "hồ tiêu"])
+        # Map tên sản phẩm → key trong PRODUCT_ALIASES
+        product_key_map = {
+            "cà phê": "coffee", "ca phe": "coffee", "coffee": "coffee",
+            "hồ tiêu": "pepper", "ho tieu": "pepper", "tiêu": "pepper", "tieu": "pepper", "pepper": "pepper",
+            "sầu riêng": "durian", "sau rieng": "durian", "durian": "durian",
+            "lúa gạo": "rice", "lua gao": "rice", "gạo": "rice", "gao": "rice",
+            "cao su": "caosu", "caosu": "caosu", "rubber": "caosu",
+            "điều nhân": "dieunhan", "dieu nhan": "dieunhan", "dieunhan": "dieunhan", "cashew": "dieunhan",
+            "cacao": "cacao", "ca cao": "cacao", "cocoa": "cacao",
+            "mắc ca": "macca", "mac ca": "macca", "macca": "macca", "macadamia": "macca",
+        }
+        p_lower = product_name.lower().strip()
+        key = "coffee"  # default
+        # Sắp xếp keys theo độ dài giảm dần để match chính xác ("hồ tiêu" trước "tiêu")
+        sorted_keys = sorted(product_key_map.items(), key=lambda x: -len(x[0]))
+        for k, v in sorted_keys:
+            if k in p_lower:
+                key = v
+                break
+        aliases = PRODUCT_ALIASES.get(key, [product_name, product_name.lower()])
         rows = self.db.get_market_prices_any(aliases, days=max(days, 2))
         trend = _price_trend(rows)
         trend["san_pham"] = product_name
@@ -318,6 +342,162 @@ class AgriAgentToolkit:
         self._emit("search_farmers", {"keyword": keyword}, f"{len(matched)} nông dân", result)
         return result
 
+    # ——————————————————————————————————————————
+    # TOOL 9: Nghiên cứu thị trường từ web (có dẫn chứng)
+    # ——————————————————————————————————————————
+    def research_market_news(self, product: str = "cà phê") -> dict:
+        """
+        [WEB RESEARCH] Tự động tìm kiếm và phân tích dữ liệu thị trường THẬT từ web.
+        Hỗ trợ: Cà phê, Hồ tiêu, Sầu riêng, Lúa gạo, Cao su, Điều nhân, Cacao, Mắc ca.
+        Trả về giá cả, tin tức, xu hướng KÈM NGUỒN (URL) để trích dẫn.
+        KHÔNG dùng dữ liệu mẫu — chỉ dùng dữ liệu thực tế từ các trang chuyên gia.
+
+        Args:
+            product: Sản phẩm cần nghiên cứu.
+
+        Returns:
+            dict: {
+                product_name, sources (list of {price, source_url, source_name, fetched_at}),
+                citation_text, news
+            }
+        """
+        result = {
+            "product_name": product,
+            "sources": [],
+            "citation_text": "",
+            "news": [],
+            "error": None,
+        }
+
+        if WebMarketResearcher is None:
+            result["error"] = "WebMarketResearcher chưa được cài đặt"
+            return result
+
+        # Map sản phẩm → phương thức research
+        product_research_map = [
+            (["cà phê", "coffee", "ca phe"], lambda r: r.research_coffee()),
+            (["hồ tiêu", "ho tieu", "tiêu", "tieu", "pepper"], lambda r: r.research_pepper()),
+            (["sầu riêng", "sau rieng", "durian"], lambda r: r.research_durian()),
+            (["lúa gạo", "lua gao", "gạo", "gao", "rice"], lambda r: r.research_rice()),
+            (["cao su", "caosu", "rubber"], lambda r: r.research_caosu()),
+            (["điều nhân", "dieu nhan", "dieunhan", "cashew"], lambda r: r.research_dieunhan()),
+            (["cacao", "ca cao", "cocoa"], lambda r: r.research_cacao()),
+            (["mắc ca", "mac ca", "macca", "macadamia"], lambda r: r.research_macca()),
+        ]
+
+        try:
+            researcher = WebMarketResearcher()
+            p_lower = product.lower().strip()
+
+            matched = False
+            for keywords, research_fn in product_research_map:
+                if any(kw in p_lower for kw in keywords):
+                    research = research_fn(researcher)
+                    result["sources"] = [s.to_dict() for s in research.sources]
+                    result["citation_text"] = research.citation_text()
+                    result["error"] = research.error
+                    result["news"] = researcher.get_market_news(product)
+                    matched = True
+                    break
+
+            if not matched:
+                # Không xác định được sản phẩm → nghiên cứu tất cả
+                results_list = [
+                    researcher.research_coffee(),
+                    researcher.research_pepper(),
+                    researcher.research_durian(),
+                    researcher.research_rice(),
+                    researcher.research_caosu(),
+                    researcher.research_dieunhan(),
+                    researcher.research_cacao(),
+                    researcher.research_macca(),
+                ]
+                all_sources = []
+                all_citations = []
+                for r in results_list:
+                    all_sources.extend([s.to_dict() for s in r.sources])
+                    ct = r.citation_text()
+                    if ct and "⚠️" not in ct:
+                        all_citations.append(ct)
+                result["sources"] = all_sources
+                result["citation_text"] = "\n".join(all_citations) if all_citations else "⚠️ Không có dữ liệu giá thị trường"
+                result["news"] = researcher.get_market_news("cà phê") + researcher.get_market_news("hồ tiêu")
+                result["error"] = None if all_sources else "Không tìm được dữ liệu giá cho bất kỳ sản phẩm nào"
+
+            summary = f"{len(result['sources'])} nguồn"
+            if result.get("sources") and len(result["sources"]) > 0:
+                first_price = result["sources"][0].get("price", 0)
+                if first_price:
+                    summary += f", giá: {first_price:,.0f} VNĐ/kg"
+
+            self._emit(
+                "research_market_news", {"product": product},
+                summary, result,
+            )
+        except Exception as e:
+            result["error"] = str(e)
+            logger.error(f"research_market_news error: {e}")
+
+        return result
+
+    # ——————————————————————————————————————————
+    # TOOL 10: Báo cáo thị trường đầy đủ (có citations)
+    # ——————————————————————————————————————————
+    def get_full_market_report(self) -> dict:
+        """
+        [WEB RESEARCH] Tạo báo cáo thị trường đầy đủ với dẫn chứng nguồn.
+        Tự động tìm kiếm trên web, tổng hợp từ nhiều nguồn chuyên gia,
+        trả về dữ liệu kèm URL cụ thể để kiểm chứng.
+
+        Returns:
+            dict: {
+                coffee: ResearchResult dict,
+                pepper: ResearchResult dict,
+                report_summary: str (tóm tắt báo cáo)
+            }
+        """
+        result = {
+            "coffee": None,
+            "pepper": None,
+            "report_summary": "",
+            "error": None,
+        }
+
+        if WebMarketResearcher is None:
+            result["error"] = "WebMarketResearcher chưa được cài đặt"
+            return result
+
+        try:
+            researcher = WebMarketResearcher()
+            coffee = researcher.research_coffee()
+            pepper = researcher.research_pepper()
+
+            result["coffee"] = coffee.to_dict()
+            result["pepper"] = pepper.to_dict()
+            result["report_summary"] = f"""📊 BÁO CÁO THỊ TRƯỜNG HÔM NAY
+{'=' * 60}
+
+☕ CÀ PHÊ:
+{coffee.citation_text()}
+
+🌶️ HỒ TIÊU:
+{pepper.citation_text()}
+
+📋 CHI TIẾT NGUỒN:
+{coffee.detailed_citations()}
+{pepper.detailed_citations()}"""
+
+            self._emit(
+                "get_full_market_report", {},
+                f"cà phê: {len(coffee.sources)} nguồn, tiêu: {len(pepper.sources)} nguồn",
+                result,
+            )
+        except Exception as e:
+            result["error"] = str(e)
+            logger.error(f"get_full_market_report error: {e}")
+
+        return result
+
     def get_callables(self) -> List[Callable]:
         """Danh sách hàm cho Gemini automatic function calling."""
         return [
@@ -329,6 +509,8 @@ class AgriAgentToolkit:
             self.get_recent_transactions,
             self.recommend_buy_sell_strategy,
             self.search_farmers,
+            self.research_market_news,
+            self.get_full_market_report,
         ]
 
     def execute(self, name: str, args: dict) -> Any:
@@ -354,6 +536,10 @@ class AgriAgentToolkit:
             "search_farmers": lambda: self.search_farmers(
                 keyword=args.get("keyword", "")
             ),
+            "research_market_news": lambda: self.research_market_news(
+                product=args.get("product", "cà phê")
+            ),
+            "get_full_market_report": lambda: self.get_full_market_report(),
         }
         fn = mapping.get(name)
         if not fn:

@@ -11,6 +11,8 @@ from ui.login_screen import LoginScreen
 from ui.ai_advisor_frame import AIAdvisorFrame
 from ui.report_frame import ReportFrame
 from ui.market_frame import MarketFrame
+from ui.market_connection_frame import MarketConnectionFrame
+from ui.settings_frame import SettingsFrame
 from ui.inventory_management import InventoryManagementFrame
 from core.notification_system import add_alerts_to_dashboard
 from ui import theme as T
@@ -190,6 +192,7 @@ class MainApp(ctk.CTk):
             {"icon": "🏷️", "text": "Sản phẩm", "command": self.show_my_products, "frame": "products"},
             {"icon": "🤖", "text": "AI Advisor", "command": self.show_ai_advisor, "frame": "ai_advisor"},
             {"icon": "📄", "text": "Báo cáo", "command": self.show_reports, "frame": "reports"},
+            {"icon": "🌐", "text": "Kết nối", "command": self.show_market_connection, "frame": "connection"},
             {"icon": "⚙️", "text": "Cài đặt", "command": self.show_settings, "frame": "settings"},
         ]
 
@@ -349,6 +352,11 @@ class MainApp(ctk.CTk):
         self.user_label.configure(text=f"Đại lý: {agent}")
         self.agent_title.configure(text=f"Đại lý {agent}")
 
+        # TỐI ƯU: Fetch dữ liệu thị trường CHỈ khi dashboard cần (lazy)
+        # Thay vì crawl web ngay khi login — để background thread làm sau
+        if self.db:
+            self._lazy_fetch_market_data()
+
         self.show_dashboard()
         
         # Lưu session
@@ -357,6 +365,33 @@ class MainApp(ctk.CTk):
         # Hiển thị thông báo chào mừng
         self.show_welcome_message(user.email)
     
+    def _lazy_fetch_market_data(self):
+        """
+        TỐI ƯU: Fetch dữ liệu thị trường trong background thread.
+        Không block UI — dashboard sẽ hiển thị dữ liệu cũ nếu có,
+        và tự cập nhật khi fetch xong.
+        """
+        import threading
+
+        def _do_fetch():
+            try:
+                from core.market_data import MarketDataManager
+                market_mgr = MarketDataManager(self.db)
+                fetch_result = market_mgr.ensure_real_data_available()
+                if fetch_result.get("success"):
+                    total = fetch_result.get("total_saved", 0)
+                    if total > 0:
+                        print(f"✅ Background fetch: đã lưu {total} bản ghi giá thị trường")
+                else:
+                    errors = fetch_result.get("errors", [])
+                    if errors:
+                        print(f"⚠️ Background fetch: {'; '.join(errors)}")
+            except Exception as e:
+                print(f"⚠️ Background fetch error: {e}")
+
+        # Đợi 2s để dashboard load xong, rồi fetch background
+        self.after(2000, lambda: threading.Thread(target=_do_fetch, daemon=True).start())
+
     def show_welcome_message(self, email):
         """Hiển thị thông báo chào mừng"""
         name = email.split('@')[0]
@@ -495,6 +530,18 @@ class MainApp(ctk.CTk):
         self.frames["market"].pack(fill="both", expand=True)
         
         self.highlight_menu("market")
+
+    def show_market_connection(self):
+        """Hiển thị Kết nối Thị trường Nông sản"""
+        self._stop_notifications()
+        for widget in self.main_content.winfo_children():
+            widget.destroy()
+
+        self.frames["connection"] = MarketConnectionFrame(
+            self.main_content,
+        )
+        self.frames["connection"].pack(fill="both", expand=True)
+        self.highlight_menu("connection")
     
     def show_transaction_management(self):
         """Hiển thị quản lý giao dịch"""
@@ -543,20 +590,18 @@ class MainApp(ctk.CTk):
         self.highlight_menu("reports")
     
     def show_settings(self):
-        """Hiển thị cài đặt"""
+        """Hiển thị cài đặt hệ thống (5 tab)"""
         self._stop_notifications()
         for widget in self.main_content.winfo_children():
             widget.destroy()
-        
-        # TODO: Create SettingsFrame
-        label = ctk.CTkLabel(
+
+        self.frames["settings"] = SettingsFrame(
             self.main_content,
-            text="⚙️ Cài đặt hệ thống\n(Đang phát triển)",
-            font=ctk.CTkFont(size=24, weight="bold"),
-            justify="center"
+            db_manager=self.db,
+            user_id=self.current_user["id"] if self.current_user else None,
+            main_app=self,
         )
-        label.pack(expand=True)
-        
+        self.frames["settings"].pack(fill="both", expand=True)
         self.highlight_menu("settings")
     
     def logout(self):

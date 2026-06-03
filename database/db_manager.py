@@ -6,6 +6,12 @@ from supabase import Client
 from .models import *
 import logging
 
+try:
+    from core.cache_manager import get_cache
+    _CACHE_AVAILABLE = True
+except ImportError:
+    _CACHE_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 class DatabaseManager:
@@ -13,6 +19,7 @@ class DatabaseManager:
     
     def __init__(self, supabase_client: Client):
         self.supabase = supabase_client
+        self._cache = get_cache() if _CACHE_AVAILABLE else None
     
     # ============ PRODUCTS MANAGEMENT ============
     
@@ -187,30 +194,31 @@ class DatabaseManager:
     # ============ TRANSACTIONS MANAGEMENT ============
     
     def create_transaction(self, transaction: Transaction, update_inventory: bool = True) -> Optional[Dict]:
-        """Tạo giao dịch thu mua mới"""
+        """Tạo giao dịch thu mua mới — invalidate cache dashboard."""
         try:
-            # Tạo transaction
             data = asdict(transaction)
             data.pop('id', None)
             result = self.supabase.table('transactions').insert(data).execute()
-            
+
             if result.data and update_inventory:
-                # Cập nhật inventory
                 self.update_inventory(
-                    transaction.user_id, 
-                    transaction.product_id, 
+                    transaction.user_id,
+                    transaction.product_id,
                     transaction.net_weight,
                     is_add=True
                 )
-                
-                # Cập nhật công nợ nếu cần
+
                 if transaction.payment_status == 'debt':
                     self.update_farmer_debt(
                         transaction.farmer_id,
                         transaction.total_amount,
-                        is_increase=False  # Nông dân nợ đại lý
+                        is_increase=False
                     )
-            
+
+            # Invalidate cache dashboard stats
+            if self._cache and result.data:
+                self._cache.delete_group("stats")
+
             return result.data[0] if result.data else None
         except Exception as e:
             logger.error(f"Error creating transaction: {e}")
@@ -266,20 +274,19 @@ class DatabaseManager:
     # ============ INVENTORY MANAGEMENT ============
     
     def update_inventory(self, user_id: str, product_id: str, quantity: float, is_add: bool = True) -> bool:
-        """Cập nhật tồn kho"""
+        """Cập nhật tồn kho — invalidate cache."""
         try:
-            # Check if inventory exists
             result = self.supabase.table('inventory')\
                 .select('*')\
                 .eq('user_id', user_id)\
                 .eq('product_id', product_id)\
                 .execute()
-            
+
             if result.data:
                 current_stock = result.data[0]['current_stock']
                 new_stock = current_stock + quantity if is_add else current_stock - quantity
                 new_stock = max(0, new_stock)
-                
+
                 self.supabase.table('inventory')\
                     .update({
                         'current_stock': new_stock,
@@ -288,27 +295,40 @@ class DatabaseManager:
                     .eq('id', result.data[0]['id'])\
                     .execute()
             else:
-                # Create new inventory
                 self.supabase.table('inventory').insert({
                     'user_id': user_id,
                     'product_id': product_id,
                     'current_stock': quantity if is_add else 0,
                     'last_updated': datetime.now().isoformat()
                 }).execute()
-            
+
+            # Invalidate cache tồn kho
+            if self._cache:
+                self._cache.delete_group("inv")
+                self._cache.delete_group("stats")
+
             return True
         except Exception as e:
             logger.error(f"Error updating inventory: {e}")
             return False
     
     def get_inventory(self, user_id: str) -> List[Dict]:
-        """Lấy danh sách tồn kho"""
+        """Lấy danh sách tồn kho — có cache Redis 60s."""
+        if self._cache:
+            cached = self._cache.get("inv", user_id)
+            if cached is not None:
+                return cached
+
         try:
             result = self.supabase.table('inventory')\
                 .select('*, products(name)')\
                 .eq('user_id', user_id)\
                 .execute()
-            return result.data if result.data else []
+            data = result.data if result.data else []
+
+            if self._cache:
+                self._cache.set("inv", data, user_id, ttl=60)
+            return data
         except Exception as e:
             logger.error(f"Error getting inventory: {e}")
             return []
@@ -316,17 +336,30 @@ class DatabaseManager:
     # ============ MARKET PRICES ============
     
     def add_market_price(self, price_data: Dict) -> Optional[Dict]:
-        """Thêm dữ liệu giá thị trường"""
+        """Thêm dữ liệu giá thị trường — invalidate cache."""
         try:
             price_data['log_date'] = date.today().isoformat()
             result = self.supabase.table('market_prices').insert(price_data).execute()
+
+            # Invalidate cache giá thị trường
+            if self._cache and result.data:
+                product = price_data.get("product_name", "")
+                self._cache.delete_group("mp")
+                logger.info(f"🗑️ Cache 'mp' invalidated after adding {product}")
+
             return result.data[0] if result.data else None
         except Exception as e:
             logger.error(f"Error adding market price: {e}")
             return None
     
     def get_market_prices(self, product_name: str, days: int = 30) -> List[Dict]:
-        """Lấy giá thị trường trong N ngày gần nhất (tính từ hôm nay lùi về)."""
+        """Lấy giá thị trường trong N ngày gần nhất — có cache Redis."""
+        # Cache key: mp:{product_slug}:{days}d
+        if self._cache:
+            cached = self._cache.get("mp", product_name, f"{days}d")
+            if cached is not None:
+                return cached
+
         try:
             start_date = (date.today() - timedelta(days=max(days - 1, 0))).isoformat()
             result = self.supabase.table('market_prices')\
@@ -336,13 +369,20 @@ class DatabaseManager:
                 .order('log_date', desc=True)\
                 .limit(days)\
                 .execute()
-            return result.data if result.data else []
+            data = result.data if result.data else []
+
+            # Lưu cache (TTL: 10 phút cho giá thị trường)
+            if self._cache:
+                self._cache.set("mp", data, product_name, f"{days}d", ttl=600)
+
+            return data
         except Exception as e:
             logger.error(f"Error getting market prices: {e}")
             return []
 
     def get_market_prices_any(self, product_names: List[str], days: int = 7) -> List[Dict]:
-        """Thử nhiều tên sản phẩm (Cà phê / cà phê) và trả về bộ có dữ liệu."""
+        """Thử nhiều tên sản phẩm (Cà phê / cà phê) và trả về bộ có dữ liệu.
+        Cache handled internally by get_market_prices()."""
         for name in product_names:
             rows = self.get_market_prices(name, days=days)
             if rows:
@@ -352,37 +392,41 @@ class DatabaseManager:
     # ============ STATISTICS & REPORTS ============
     
     def get_dashboard_stats(self, user_id: str) -> Dict:
-        """Lấy thống kê cho dashboard"""
+        """Lấy thống kê cho dashboard — có cache Redis 30s."""
+        if self._cache:
+            cached = self._cache.get("stats", user_id, "dashboard")
+            if cached is not None:
+                return cached
+
         try:
-            # Tổng số nông dân
             farmers_result = self.supabase.table('farmers')\
                 .select('id', count='exact')\
                 .eq('user_id', user_id)\
                 .execute()
-            
-            # Tổng số giao dịch
             transactions_result = self.supabase.table('transactions')\
                 .select('total_amount, net_weight')\
                 .eq('user_id', user_id)\
                 .execute()
-            
-            # Tổng tồn kho
             inventory_result = self.supabase.table('inventory')\
                 .select('current_stock')\
                 .eq('user_id', user_id)\
                 .execute()
-            
+
             total_weight = sum(t['net_weight'] for t in transactions_result.data) if transactions_result.data else 0
             total_value = sum(t['total_amount'] for t in transactions_result.data) if transactions_result.data else 0
             total_stock = sum(i['current_stock'] for i in inventory_result.data) if inventory_result.data else 0
-            
-            return {
+
+            data = {
                 'total_farmers': farmers_result.count if farmers_result.count else 0,
                 'total_transactions': len(transactions_result.data) if transactions_result.data else 0,
                 'total_weight': total_weight,
                 'total_value': total_value,
                 'total_stock': total_stock
             }
+
+            if self._cache:
+                self._cache.set("stats", data, user_id, "dashboard", ttl=30)
+            return data
         except Exception as e:
             logger.error(f"Error getting dashboard stats: {e}")
             return {}

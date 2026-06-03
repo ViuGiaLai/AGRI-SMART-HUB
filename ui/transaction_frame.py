@@ -505,17 +505,32 @@ class TransactionFrame(ctk.CTkFrame):
     def load_transactions(self):
         for item in self.tree.get_children():
             self.tree.delete(item)
+
+        # Cấu hình tag màu
+        self.tree.tag_configure("paid", foreground="#27ae60")
+        self.tree.tag_configure("debt", foreground="#e74c3c", font=("Arial", 10, "bold"))
+        self.tree.tag_configure("amount_high", foreground="#e67e22", font=("Arial", 10, "bold"))
+        self.tree.tag_configure("amount_low", foreground="#7f8c8d")
+
         for trans in self.db.get_transactions(self.user_id):
             farmer_name  = trans.get("farmers", {}).get("name", "N/A")
             product_name = trans.get("products", {}).get("name", "N/A")
-            status = "✅" if trans["payment_status"] == "paid" else "📝"
-            self.tree.insert("", "end", values=(
+            status_text = "✅" if trans["payment_status"] == "paid" else "📝"
+            amount = trans.get('total_amount', 0) or 0
+
+            # Chọn tag dựa trên trạng thái và số tiền
+            if trans["payment_status"] == "paid":
+                row_tag = "paid"
+            else:
+                row_tag = "debt"
+
+            self.tree.insert("", "end", tags=(row_tag, trans["id"]), values=(
                 str(trans.get("created_at", ""))[:10],
                 farmer_name, product_name,
                 f"{trans.get('net_weight', 0):,.1f}",
-                f"{trans.get('total_amount', 0):,.0f}",
-                status,
-            ), tags=(trans["id"],))
+                f"{amount:,.0f}",
+                status_text,
+            ))
 
     def search_transactions(self):
         q = self.search_entry.get().lower()

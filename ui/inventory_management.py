@@ -232,12 +232,26 @@ class InventoryManagementFrame(ctk.CTkFrame):
                 self.tree.delete(item)
             self._stock_by_product.clear()
 
+            # Cấu hình tag màu cho cột tồn kho
+            self.tree.tag_configure("stock_danger", foreground="#e74c3c", font=("Arial", 10, "bold"))
+            self.tree.tag_configure("stock_warn", foreground="#f39c12", font=("Arial", 10, "bold"))
+            self.tree.tag_configure("stock_ok", foreground="#27ae60")
+
             for inv in inventory or []:
                 name = inv.get("products", {}).get("name", "N/A")
                 stock = inv.get("current_stock", 0) or 0
                 self._stock_by_product[name] = stock
                 value = stock * self.DEFAULT_PRICE_ESTIMATE
-                self.tree.insert("", "end", values=(
+
+                # Tag màu theo mức tồn kho
+                if stock <= 0:
+                    tag = "stock_danger"
+                elif stock < 100:
+                    tag = "stock_warn"
+                else:
+                    tag = "stock_ok"
+
+                self.tree.insert("", "end", tags=(tag,), values=(
                     inv.get("id", ""),
                     name,
                     f"{stock:,.1f}",

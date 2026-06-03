@@ -248,14 +248,27 @@ class FarmerFrame(ctk.CTkFrame):
         for item in self.tree.get_children():
             self.tree.delete(item)
         
-        # Add farmers
+        # Cấu hình tag màu cho cột công nợ
+        self.tree.tag_configure("debt_high", foreground="#e74c3c")
+        self.tree.tag_configure("debt_low", foreground="#f39c12")
+        self.tree.tag_configure("debt_ok", foreground="#27ae60")
+        self.tree.tag_configure("title_bold", font=("Arial", 10, "bold"))
+
+        # Add farmers với tag màu theo công nợ
         for farmer in farmers:
-            self.tree.insert("", "end", values=(
+            debt = farmer.get('total_debt', 0) or 0
+            if debt > 100_000_000:
+                tag = "debt_high"
+            elif debt > 10_000_000:
+                tag = "debt_low"
+            else:
+                tag = "debt_ok"
+            self.tree.insert("", "end", tags=(tag,), values=(
                 farmer['id'],
                 farmer['name'],
                 farmer.get('phone', ''),
                 farmer.get('address', ''),
-                f"{farmer.get('total_debt', 0):,.0f}",
+                f"{debt:,.0f}",
                 farmer.get('created_at', '')[:10] if farmer.get('created_at') else ''
             ))
     

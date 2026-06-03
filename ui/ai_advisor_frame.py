@@ -33,7 +33,7 @@ class AIAdvisorFrame(ctk.CTkFrame):
         header.grid(row=0, column=0, sticky="ew", padx=24, pady=(20, 8))
         ctk.CTkLabel(
             header, text="🤖 AI Advisor",
-            font=ctk.CTkFont(size=26, weight="bold"), text_color=T.TEXT_DARK,
+            font=ctk.CTkFont(size=28, weight="bold"), text_color=T.TEXT_DARK,
         ).pack(side="left")
         badge = ctk.CTkLabel(
             header, text="  AGENTIC  ",
@@ -45,7 +45,7 @@ class AIAdvisorFrame(ctk.CTkFrame):
         ctk.CTkLabel(
             header,
             text="Agent tự gọi công cụ (tồn kho, giá, giao dịch, công nợ) — dữ liệu thật từ GASH",
-            font=ctk.CTkFont(size=12), text_color=T.TEXT_MUTED,
+            font=ctk.CTkFont(size=13), text_color=T.TEXT_MUTED,
         ).pack(side="left", padx=(12, 0))
 
         # Body: Chat | Agent steps
@@ -220,15 +220,24 @@ class AIAdvisorFrame(ctk.CTkFrame):
             border_width=1, border_color=("#e0e0e0", "#505050"),
         )
         bubble.pack(side="right", anchor="e", padx=(60, 0))
-        ctk.CTkLabel(bubble, text="Bạn", font=ctk.CTkFont(size=10, weight="bold"), text_color=T.SECONDARY).pack(
-            anchor="e", padx=14, pady=(8, 0))
+        ctk.CTkLabel(bubble, text="👤 Bạn", font=ctk.CTkFont(size=12, weight="bold"), text_color=T.SECONDARY).pack(
+            anchor="e", padx=16, pady=(10, 0))
         ctk.CTkLabel(
-            bubble, text=text, font=ctk.CTkFont(size=13),
-            text_color=T.TEXT_DARK, justify="left", wraplength=420,
-        ).pack(anchor="e", padx=14, pady=(4, 8))
+            bubble, text=text, font=ctk.CTkFont(size=15),
+            text_color=T.TEXT_DARK, justify="left", wraplength=460,
+        ).pack(anchor="e", padx=16, pady=(6, 12))
         self._scroll_chat()
 
+    @staticmethod
+    def _resolve_color(color):
+        """Giải mã màu có thể là tuple (light, dark) → str (light)."""
+        if isinstance(color, tuple):
+            return color[0]
+        return color
+
     def _add_ai_bubble(self, text, footer: str = ""):
+        import re
+
         row = ctk.CTkFrame(self.messages_area, fg_color="transparent")
         row.pack(fill="x", pady=6, padx=12)
         bubble = ctk.CTkFrame(
@@ -239,16 +248,116 @@ class AIAdvisorFrame(ctk.CTkFrame):
         bubble.pack(side="left", anchor="w", padx=(0, 60))
         ctk.CTkLabel(
             bubble, text="🤖 AgriSmart Agent",
-            font=ctk.CTkFont(size=10, weight="bold"), text_color=T.PRIMARY,
-        ).pack(anchor="w", padx=14, pady=(8, 0))
+            font=ctk.CTkFont(size=12, weight="bold"), text_color=T.PRIMARY,
+        ).pack(anchor="w", padx=16, pady=(10, 0))
+
         body = text.strip()
         if footer:
             body = f"{body}\n\n—\n{footer}"
-        ctk.CTkLabel(
-            bubble, text=body, font=ctk.CTkFont(size=13),
-            text_color=T.TEXT_DARK, justify="left", wraplength=480,
-        ).pack(anchor="w", padx=14, pady=(4, 8))
+
+        # Đếm số dòng để tính chiều cao textbox (font 15px, mỗi dòng ~26px)
+        line_count = len(body.split("\n"))
+        estimated_height = max(70, line_count * 26 + 14)
+
+        # Dùng CTkTextbox để làm nổi bật số và từ khóa quan trọng
+        textbox = ctk.CTkTextbox(
+            bubble, wrap="word", height=estimated_height,
+            font=ctk.CTkFont(size=15),
+            fg_color="transparent", border_width=0,
+            text_color=T.TEXT_DARK,
+            activate_scrollbars=False,
+        )
+        textbox.pack(fill="x", padx=16, pady=(6, 10))
+
+        # Cấu hình tag — resolve tuple màu thành string cho tkinter
+        C = self._resolve_color
+        tb = textbox._textbox if hasattr(textbox, '_textbox') else textbox
+        tb.tag_config("number", foreground=C(T.INFO), font=ctk.CTkFont(size=15, weight="bold"))
+        tb.tag_config("price", foreground="#e67e22", font=ctk.CTkFont(size=15, weight="bold"))
+        tb.tag_config("keyword", font=ctk.CTkFont(size=15, weight="bold"))
+        tb.tag_config("danger", foreground=C(T.DANGER), font=ctk.CTkFont(size=15, weight="bold"))
+        tb.tag_config("success", foreground=C(T.SUCCESS), font=ctk.CTkFont(size=15, weight="bold"))
+        tb.tag_config("header", font=ctk.CTkFont(size=16, weight="bold"), foreground=C(T.SECONDARY))
+        tb.tag_config("muted", font=ctk.CTkFont(size=12), foreground=C(T.TEXT_MUTED))
+        tb.tag_config("source", font=ctk.CTkFont(size=12), foreground=C(T.INFO))
+
+        # Danh sách từ khóa cần làm đậm
+        bold_keywords = [
+            "khuyến nghị", "cảnh báo", "rủi ro", "quan trọng", "lưu ý",
+            "tăng", "giảm", "ổn định", "tồn kho", "công nợ", "doanh thu",
+            "cao", "thấp", "trung bình",
+        ]
+
+        # Ghi text từng dòng và áp dụng tag
+        lines = body.split("\n")
+        for line_idx, line in enumerate(lines):
+            if line_idx > 0:
+                tb.insert("end", "\n")
+
+            trimmed = line.strip()
+
+            # Dòng header (bắt đầu bằng 📌, 🔧, 📊, 💡, 📋, ⚠️, ✅)
+            if trimmed and trimmed[0] in "📌🔧📊💡📋⚠️✅":
+                tb.insert("end", trimmed + "\n", "header")
+                continue
+
+            # Dòng nguồn (chứa http)
+            if "http" in trimmed or "nguồn:" in trimmed.lower():
+                tb.insert("end", trimmed + "\n", "source")
+                continue
+
+            # Dòng muted (dấu gạch đầu dòng phụ)
+            if trimmed.startswith("  ") or trimmed.startswith("- "):
+                tb.insert("end", trimmed + "\n", "muted")
+                continue
+
+            # Parse dòng thường: tách số và text
+            parts = re.split(
+                r'(\b\d{1,3}(?:\.\d{3})*(?:\s*[-–]\s*\d{1,3}(?:\.\d{3})*)?(?:\s*VNĐ/kg|\s*VNĐ|\s*kg|\s*%|\s*đ/kg)?)',
+                trimmed
+            )
+            for part in parts:
+                if not part:
+                    continue
+                is_price = bool(re.match(r'^\d{1,3}(?:\.\d{3})*(?:\s*[-–]\s*\d{1,3}(?:\.\d{3})*)?(?:\s*VNĐ/kg|\s*VNĐ|\s*kg|\s*%|\s*đ/kg)?$', part))
+                if is_price:
+                    if "VNĐ/kg" in part or "đ/kg" in part:
+                        tb.insert("end", part, "price")
+                    elif "VNĐ" in part:
+                        tb.insert("end", part, "number")
+                    elif "%" in part:
+                        tb.insert("end", part, "danger")
+                    else:
+                        tb.insert("end", part, "number")
+                else:
+                    lower_part = part.lower().strip()
+                    if any(kw in lower_part for kw in bold_keywords):
+                        tb.insert("end", part, "keyword")
+                    else:
+                        tb.insert("end", part)
+
+            tb.insert("end", "\n")
+
+        # Xóa dòng trống cuối
+        last_line_start = tb.index("end - 1 lines")
+        if tb.get(last_line_start, "end - 1c").strip() == "":
+            tb.delete(last_line_start, "end - 1c")
+
+        textbox.configure(state="disabled")
+
+        # Tự động điều chỉnh chiều cao sau khi insert text
+        self.after(50, lambda tb=tb, tx=textbox: self._adjust_textbox_height(tx, tb))
+
         self._scroll_chat()
+
+    def _adjust_textbox_height(self, textbox, tb):
+        """Tự động điều chỉnh chiều cao CTkTextbox theo nội dung (font 15px)."""
+        try:
+            line_count = int(tb.index("end-1c").split(".")[0])
+            new_height = max(60, line_count * 24 + 20)
+            textbox.configure(height=new_height)
+        except Exception:
+            pass
 
     def _scroll_chat(self):
         try:
@@ -314,7 +423,9 @@ class AIAdvisorFrame(ctk.CTkFrame):
             footer = "🧠 Agentic AI"
             if tools:
                 footer += f" · Tools: {', '.join(tools)}"
-            footer += f" · {result.get('model_used', 'gemini')}"
+            model_name = result.get('model_used') or 'gemini'
+            if model_name != 'None':
+                footer += f" · {model_name}"
             self._add_ai_bubble(result["response"], footer=footer)
         else:
             self._add_ai_bubble(

@@ -8,6 +8,93 @@ from database.db_manager import DatabaseManager
 PRODUCT_ALIASES = {
     "coffee": ["Cà phê", "cà phê", "Ca phe"],
     "pepper": ["Hồ tiêu", "hồ tiêu", "Ho tieu"],
+    "caosu": ["Cao su", "cao su"],
+    "dieunhan": ["Điều nhân", "điều nhân", "Dieu nhan"],
+    "cacao": ["Cacao", "cacao", "Ca cao"],
+    "macca": ["Mắc ca", "mắc ca", "Mac ca"],
+}
+
+# Các nguồn web uy tín — tổng hợp từ 7 nguồn chuyên gia
+SOURCE_NAMES = {
+    "Cà phê": {
+        "primary": "thoibaotaichinhvietnam.vn — Thời báo Tài chính Việt Nam ✅ chính xác nhất",
+        "primary_url": "https://thoibaotaichinhvietnam.vn/tim-kiem?q=gi%C3%A1+c%C3%A0+ph%C3%AA",
+        "secondary": "giacaphe.com — Chuyên trang giá cà phê",
+        "secondary_url": "https://giacaphe.com/gia-ca-phe-noi-dia/",
+        "gianongsan247": "gianongsan247.com — Giá Nông Sản 247",
+        "gianongsan247_url": "https://gianongsan247.com/gia-ca-phe/",
+        "mxv": "mxv.com.vn — Sở Giao dịch Hàng hóa VN",
+        "mxv_url": "https://mxv.com.vn/thi-truong-hang-hoa/ca-phe/",
+        "official": "asemconnectvietnam.gov.vn — Cổng TT Thị trường Nông sản",
+        "official_url": "https://asemconnectvietnam.gov.vn/thi-truong/ca-phe/",
+        "congthuong": "Bộ Công Thương (congthuong.vn)",
+        "congthuong_url": "https://congthuong.vn/gia-ca-phe-hom-nay/",
+        "nongdanviet": "nongdanviet.vn — Nông Dân Việt",
+        "nongdanviet_url": "https://nongdanviet.vn/gia-ca-phe/",
+    },
+    "Hồ tiêu": {
+        "primary": "thoibaotaichinhvietnam.vn — Thời báo Tài chính Việt Nam ✅ chính xác nhất",
+        "primary_url": "https://thoibaotaichinhvietnam.vn/tim-kiem?q=gi%C3%A1+h%E1%BB%93+ti%C3%AAu",
+        "secondary": "nongdanviet.vn — Nông Dân Việt",
+        "secondary_url": "https://nongdanviet.vn/gia-ca-phe/",
+        "gianongsan247": "gianongsan247.com — Giá Nông Sản 247",
+        "gianongsan247_url": "https://gianongsan247.com/gia-ca-phe/",
+        "mxv": "mxv.com.vn — Sở Giao dịch Hàng hóa VN",
+        "mxv_url": "https://mxv.com.vn/thi-truong-hang-hoa/ca-phe/",
+        "official": "asemconnectvietnam.gov.vn — Cổng TT Thị trường Nông sản",
+        "official_url": "https://asemconnectvietnam.gov.vn/thi-truong/ca-phe/",
+        "congthuong": "Bộ Công Thương (congthuong.vn)",
+        "congthuong_url": "https://congthuong.vn/gia-ca-phe-hom-nay/",
+    },
+    "Hồ tiêu": {
+        "primary": "nongdanviet.vn — Nông Dân Việt",
+        "primary_url": "https://nongdanviet.vn/gia-ho-tieu/",
+        "secondary": "giacaphe.com",
+        "secondary_url": "https://giacaphe.com/gia-ho-tieu/",
+        "gianongsan247": "gianongsan247.com — Giá Nông Sản 247",
+        "gianongsan247_url": "https://gianongsan247.com/gia-ho-tieu/",
+        "mxv": "mxv.com.vn — Sở Giao dịch Hàng hóa VN",
+        "mxv_url": "https://mxv.com.vn/thi-truong-hang-hoa/ho-tieu/",
+        "official": "asemconnectvietnam.gov.vn — Cổng TT Thị trường Nông sản",
+        "official_url": "https://asemconnectvietnam.gov.vn/thi-truong/ho-tieu/",
+        "congthuong": "Bộ Công Thương (congthuong.vn)",
+        "congthuong_url": "https://congthuong.vn/gia-ho-tieu-hom-nay/",
+    },
+    "Sầu riêng": {
+        "primary": "gianongsan247.com — Giá Nông Sản 247",
+        "primary_url": "https://gianongsan247.com/gia-sau-rieng/",
+        "secondary": "nongdanviet.vn — Nông Dân Việt",
+        "secondary_url": "https://nongdanviet.vn/gia-sau-rieng/",
+    },
+    "Lúa gạo": {
+        "primary": "gianongsan247.com — Giá Nông Sản 247",
+        "primary_url": "https://gianongsan247.com/gia-lua-gao/",
+        "secondary": "nongdanviet.vn — Nông Dân Việt",
+        "secondary_url": "https://nongdanviet.vn/gia-lua-gao/",
+    },
+    "Cao su": {
+        "primary": "nongdanviet.vn/gia-nong-san — Bảng giá nông sản tổng hợp",
+        "primary_url": "https://nongdanviet.vn/gia-nong-san",
+    },
+    "Điều nhân": {
+        "primary": "nongdanviet.vn/gia-nong-san — Bảng giá nông sản tổng hợp",
+        "primary_url": "https://nongdanviet.vn/gia-nong-san",
+    },
+    "Cacao": {
+        "primary": "nongdanviet.vn/gia-nong-san — Bảng giá nông sản tổng hợp",
+        "primary_url": "https://nongdanviet.vn/gia-nong-san",
+    },
+    "Mắc ca": {
+        "primary": "nongdanviet.vn/gia-nong-san — Bảng giá nông sản tổng hợp",
+        "primary_url": "https://nongdanviet.vn/gia-nong-san",
+    },
+}
+
+# Thống kê — Tổng cục Thống kê (macro, không phải giá hàng ngày)
+GSO_INFO = {
+    "name": "Tổng cục Thống kê Việt Nam (GSO)",
+    "url": "https://www.gso.gov.vn/",
+    "description": "Sản lượng, xuất khẩu, chỉ số giá tiêu dùng — dữ liệu vĩ mô chính thức",
 }
 
 
@@ -73,9 +160,14 @@ def build_advisor_context(db: DatabaseManager, user_id: str) -> Dict[str, Any]:
         pass
 
     # —— Giá thị trường ——
+    label_map = {
+        "coffee": "Cà phê", "pepper": "Hồ tiêu",
+        "caosu": "Cao su", "dieunhan": "Điều nhân",
+        "cacao": "Cacao", "macca": "Mắc ca",
+    }
     for key, aliases in PRODUCT_ALIASES.items():
         rows = db.get_market_prices_any(aliases, days=7)
-        label = "Cà phê" if key == "coffee" else "Hồ tiêu"
+        label = label_map.get(key, key)
         ctx["gia_thi_truong"][label] = _price_trend(rows)
 
     # —— Giao dịch 30 ngày ——
@@ -126,9 +218,17 @@ def build_advisor_context(db: DatabaseManager, user_id: str) -> Dict[str, Any]:
 
     coffee = ctx["gia_thi_truong"].get("Cà phê", {})
     pepper = ctx["gia_thi_truong"].get("Hồ tiêu", {})
+    caosu = ctx["gia_thi_truong"].get("Cao su", {})
+    dieunhan = ctx["gia_thi_truong"].get("Điều nhân", {})
+    cacao = ctx["gia_thi_truong"].get("Cacao", {})
+    macca = ctx["gia_thi_truong"].get("Mắc ca", {})
     ctx["chat_luong_du_lieu"] = {
         "co_gia_ca_phe": coffee.get("co_du_lieu", False),
         "co_gia_tieu": pepper.get("co_du_lieu", False),
+        "co_gia_cao_su": caosu.get("co_du_lieu", False),
+        "co_gia_dieu_nhan": dieunhan.get("co_du_lieu", False),
+        "co_gia_cacao": cacao.get("co_du_lieu", False),
+        "co_gia_mac_ca": macca.get("co_du_lieu", False),
         "co_ton_kho": len(ctx["ton_kho"]) > 0,
         "co_giao_dich": (ctx["giao_dich_30_ngay"].get("so_giao_dich") or 0) > 0,
     }
@@ -137,17 +237,43 @@ def build_advisor_context(db: DatabaseManager, user_id: str) -> Dict[str, Any]:
 
 
 def format_context_for_display(ctx: Dict[str, Any]) -> str:
-    """Một dòng tóm tắt nguồn dữ liệu hiển thị dưới câu trả lời AI."""
+    """Tóm tắt nguồn dữ liệu + URL kèm dẫn chứng (7 nguồn chuyên gia)."""
     q = ctx.get("chat_luong_du_lieu", {})
     parts = []
+    citations = []
+
     if q.get("co_gia_ca_phe"):
         g = ctx["gia_thi_truong"]["Cà phê"].get("gia_hom_nay_vnd_kg")
-        parts.append(f"giá cà phê {g:,.0f} đ/kg" if g else "giá cà phê")
+        if g:
+            parts.append(f"giá cà phê {g:,.0f} đ/kg")
+            src = SOURCE_NAMES.get("Cà phê", {})
+            citations.append(f"• Cà phê: {src.get('primary_url', '')}")
+            citations.append(f"  Nguồn dự phòng: {src.get('gianongsan247_url', '')}")
+            citations.append(f"  Sở Giao dịch HH: {src.get('mxv_url', '')}")
+    if q.get("co_gia_tieu"):
+        g = ctx["gia_thi_truong"]["Hồ tiêu"].get("gia_hom_nay_vnd_kg")
+        if g:
+            parts.append(f"giá hồ tiêu {g:,.0f} đ/kg")
+            src = SOURCE_NAMES.get("Hồ tiêu", {})
+            citations.append(f"• Hồ tiêu: {src.get('primary_url', '')}")
+            citations.append(f"  Nguồn dự phòng: {src.get('gianongsan247_url', '')}")
+            citations.append(f"  Sở Giao dịch HH: {src.get('mxv_url', '')}")
     if q.get("co_ton_kho"):
         parts.append("tồn kho")
     if q.get("co_giao_dich"):
         n = ctx["giao_dich_30_ngay"].get("so_giao_dich", 0)
         parts.append(f"{n} giao dịch/30 ngày")
+
+    base = f"📊 Dữ liệu: {', '.join(parts)} · {ctx.get('thoi_diem', '')}" if parts else ""
+    if citations:
+        base += f"\n\n📋 Nguồn dữ liệu (URL):\n" + "\n".join(citations)
+        base += "\n\n🌐 Các nguồn tham khảo thêm:"
+        base += f"\n• Sầu riêng: {SOURCE_NAMES.get('Sầu riêng', {}).get('primary_url', '')}"
+        base += f"\n• Lúa gạo: {SOURCE_NAMES.get('Lúa gạo', {}).get('primary_url', '')}"
+        base += f"\n• Cao su, Điều nhân, Cacao, Mắc ca: {SOURCE_NAMES.get('Cao su', {}).get('primary_url', '')}"
+        base += f"\n• Dữ liệu vĩ mô (sản lượng, xuất khẩu): {GSO_INFO['url']} — {GSO_INFO['name']}"
+        base += "\n\nDữ liệu được thu thập tự động từ các trang thông tin thị trường nông sản uy tín."
+
     if not parts:
         return "⚠️ Thiếu dữ liệu giá thị trường — câu trả lời chỉ mang tính tham khảo"
-    return "📊 Dữ liệu: " + ", ".join(parts) + f" · {ctx.get('thoi_diem', '')}"
+    return base

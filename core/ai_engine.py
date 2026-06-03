@@ -137,14 +137,83 @@ class GeminiConfig:
         logger.error("Không khởi tạo được model Gemini: %s", last_error)
         return None
 
-# Khởi tạo cấu hình toàn cục
-gemini_config = GeminiConfig()
+# === LAZY GEMINI CONFIG ===
+# Không khởi tạo GeminiConfig ở module level — tránh genai.configure() khi import
+gemini_config = None
+
+
+def get_gemini_config():
+    """Lazy singleton GeminiConfig — chỉ khởi tạo khi thực sự cần."""
+    global gemini_config
+    if gemini_config is None:
+        gemini_config = GeminiConfig()
+    return gemini_config
+
+
+# =============================================================================
+# MULTI-PROVIDER INTEGRATION
+# =============================================================================
+
+def get_provider_names() -> list:
+    """Lấy danh sách provider có API key."""
+    try:
+        from core.llm_provider import get_llm_router
+        router = get_llm_router()
+        return router.available_providers
+    except Exception:
+        return []
+
+
+def ask_llm(
+    prompt: str,
+    system_prompt: str = "",
+    temperature: float = 0.35,
+    max_tokens: int = 4096,
+) -> Dict[str, Any]:
+    """
+    Hỏi LLM với auto-fallback giữa các provider.
+    Tự động thử Gemini → OpenRouter → Groq → DeepSeek → Cloudflare
+    khi gặp rate limit.
+
+    Returns:
+        Dict với success, response, model_used, provider, error, latency_ms
+    """
+    from core.llm_provider import get_llm_router, LLMMessage
+
+    router = get_llm_router()
+    messages = []
+    if system_prompt:
+        messages.append(LLMMessage(role="system", content=system_prompt))
+    messages.append(LLMMessage(role="user", content=prompt))
+
+    response = router.chat_completion(
+        messages=messages,
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
+
+    return {
+        "success": response.success,
+        "response": response.content,
+        "model_used": response.model_used,
+        "provider": response.provider,
+        "error": response.error,
+        "latency_ms": response.latency_ms,
+        "timestamp": datetime.now().isoformat(),
+    }
+
+
+def refresh_llm_providers():
+    """Refresh provider list (gọi sau khi user thay đổi API key)."""
+    from core.llm_provider import reset_llm_router
+    reset_llm_router()
+
 
 class GeminiAgent:
     """AI Agent sử dụng Gemini API cho phân tích thị trường"""
     
     def __init__(self):
-        self.config = gemini_config
+        self.config = get_gemini_config()
         self.conversation_history: List[Dict[str, str]] = []
         self.max_history = 10  # Giới hạn lịch sử hội thoại
     

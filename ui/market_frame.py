@@ -218,6 +218,48 @@ class MarketFrame(ctk.CTkFrame):
             fg_color="#27ae60"
         )
         self.save_manual_btn.pack(pady=10, padx=20, fill="x")
+        
+        # Seed data section
+        seed_frame = ctk.CTkFrame(self.left_panel, corner_radius=10)
+        seed_frame.pack(fill="x", padx=20, pady=10)
+        
+        seed_title = ctk.CTkLabel(
+            seed_frame,
+            text="🌱 TẠO DỮ LIỆU MẪU",
+            font=ctk.CTkFont(size=14, weight="bold")
+        )
+        seed_title.pack(pady=(10, 5))
+        
+        seed_desc = ctk.CTkLabel(
+            seed_frame,
+            text="Tự động tạo 30 ngày dữ liệu giá mẫu\ncho cà phê và hồ tiêu (dùng khi chưa có dữ liệu thật)",
+            font=ctk.CTkFont(size=11),
+            text_color="gray",
+            justify="center"
+        )
+        seed_desc.pack(padx=15, pady=(0, 10))
+        
+        seed_btn_frame = ctk.CTkFrame(seed_frame, fg_color="transparent")
+        seed_btn_frame.pack(fill="x", padx=15, pady=(0, 10))
+        
+        self.seed_btn = ctk.CTkButton(
+            seed_btn_frame,
+            text="🌱 Tạo dữ liệu mẫu (nếu chưa có)",
+            command=self.seed_data,
+            height=38,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color="#8e44ad",
+            hover_color="#6c3483"
+        )
+        self.seed_btn.pack(fill="x")
+        
+        self.seed_status = ctk.CTkLabel(
+            seed_frame,
+            text="",
+            font=ctk.CTkFont(size=11),
+            text_color="gray"
+        )
+        self.seed_status.pack(pady=(0, 10))
 
     def create_history_panel(self):
         """Tạo panel lịch sử"""
@@ -368,6 +410,32 @@ class MarketFrame(ctk.CTkFrame):
         self.pepper_entry.delete(0, "end")
         self.load_market_data()
 
+    def seed_data(self):
+        """Tạo dữ liệu giá thị trường mẫu"""
+        self.seed_status.configure(text="⏳ Đang tạo dữ liệu mẫu...")
+        self.update()
+
+        try:
+            result = self.market_manager.seed_default_market_data()
+            total = sum(result.values())
+            if total > 0:
+                self.seed_status.configure(
+                    text=f"✅ Đã tạo {total} bản ghi (cà phê: {result['Cà phê']}, tiêu: {result['Hồ tiêu']})"
+                )
+                messagebox.showinfo(
+                    "Thành công",
+                    f"Đã tạo {total} bản ghi giá thị trường mẫu!\n"
+                    f"• Cà phê: {result['Cà phê']} ngày\n"
+                    f"• Hồ tiêu: {result['Hồ tiêu']} ngày"
+                )
+                self.load_market_data()
+            else:
+                self.seed_status.configure(text="ℹ️ Dữ liệu đã có sẵn, không cần tạo thêm")
+                messagebox.showinfo("Thông tin", "Dữ liệu giá thị trường đã có sẵn trong hệ thống!")
+        except Exception as e:
+            self.seed_status.configure(text=f"❌ Lỗi: {str(e)}")
+            messagebox.showerror("Lỗi", f"Lỗi tạo dữ liệu mẫu: {e}")
+
     def load_market_data(self):
         """Tải dữ liệu thị trường"""
         # Clear tree
@@ -376,15 +444,31 @@ class MarketFrame(ctk.CTkFrame):
 
         products = ["Cà phê", "Hồ tiêu", "Điều", "Cao su", "Sắn", "Ngô", "Lúa gạo"]
 
+        # Cấu hình tag màu cho giá
+        self.tree.tag_configure("price_high", foreground="#e74c3c", font=("Arial", 10, "bold"))
+        self.tree.tag_configure("price_medium", foreground="#f39c12")
+        self.tree.tag_configure("price_low", foreground="#27ae60")
+        self.tree.tag_configure("price_info", foreground="#3498db")
+
         try:
             for product in products:
                 prices = self.db.get_market_prices(product, 30)
                 if prices:
                     for p in prices:
-                        self.tree.insert("", "end", values=(
+                        price_local = p.get('price_local', 0) or 0
+                        # Tag màu theo ngưỡng giá
+                        if price_local > 100_000:
+                            tag = "price_high"
+                        elif price_local > 50_000:
+                            tag = "price_medium"
+                        elif price_local > 0:
+                            tag = "price_low"
+                        else:
+                            tag = "price_info"
+                        self.tree.insert("", "end", tags=(tag,), values=(
                             p.get('log_date', '')[:10] if p.get('log_date') else '',
                             p.get('product_name', ''),
-                            f"{p.get('price_local', 0):,.0f}",
+                            f"{price_local:,.0f}",
                             f"{p.get('price_global_london', 0):,.0f}" if p.get('price_global_london') else ''
                         ))
         except Exception as e:

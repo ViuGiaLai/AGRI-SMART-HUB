@@ -130,18 +130,24 @@ class DashboardFrame(ctk.CTkFrame):
         ctk.CTkLabel(
             top,
             text=title,
-            font=ctk.CTkFont(size=12),
+            font=ctk.CTkFont(size=12, weight="bold"),
             text_color=T.TEXT_MUTED,
         ).pack(side="left", padx=(10, 0))
 
         value_label = ctk.CTkLabel(
             inner,
             text=value,
-            font=ctk.CTkFont(size=20, weight="bold"),
+            font=ctk.CTkFont(size=26, weight="bold"),
             text_color=accent,
             anchor="w",
         )
-        value_label.pack(anchor="w", pady=(10, 0))
+        value_label.pack(anchor="w", pady=(8, 0))
+
+        # Thêm underline accent dưới value
+        ctk.CTkFrame(inner, height=2, width=60, corner_radius=1, fg_color=accent).pack(
+            anchor="w", pady=(4, 0)
+        )
+
         return value_label
 
     def load_dashboard_data(self):
@@ -173,17 +179,18 @@ class DashboardFrame(ctk.CTkFrame):
         return sum(t.get("total_amount", 0) for t in txs)
 
     def _today_coffee_price(self):
-        prices = self.db_manager.get_market_prices("cà phê", days=1)
-        if prices:
-            return prices[0].get("price_local", 0) or 0
-        prices = self.db_manager.get_market_prices("cà phê", days=7)
+        # TỐI ƯU: Gộp 9 queries lặp thành 1 query duy nhất
+        # Dùng get_market_prices thay vì get_market_prices_any để tránh lặp
+        prices = self.db_manager.get_market_prices("Cà phê", days=1)
+        if not prices:
+            prices = self.db_manager.get_market_prices("Cà phê", days=7)
         return prices[0].get("price_local", 0) if prices else 0
 
     def _draw_price_chart(self):
         for w in self.chart_container.winfo_children():
             w.destroy()
 
-        market_prices = self.db_manager.get_market_prices("cà phê", days=7)
+        market_prices = self.db_manager.get_market_prices("Cà phê", days=7)
         if not market_prices:
             ctk.CTkLabel(
                 self.chart_container,

@@ -1,8 +1,38 @@
+# ============================================
+# AGRI-SMART HUB — Requirements
+# Cho cả Desktop (CustomTkinter) và Web (Gradio)
+# ============================================
+
+# === Database ===
 supabase
 python-dotenv
-customtkinter
+
+# === AI / LLM ===
+google-generativeai>=0.8.0
+openai>=1.0.0
+tenacity
+
+# === Web scraping ===
+requests
+beautifulsoup4
+lxml
+
+# === Web UI (Gradio) — cho Hugging Face Spaces ===
+gradio>=4.0.0
+
+# === Desktop UI (CustomTkinter) — cho phiên bản desktop ===
+# customtkinter  # Bỏ comment nếu chạy desktop app
+# pillow         # Bỏ comment nếu chạy desktop app
+
+# === Data processing & Reporting ===
 pandas
 matplotlib
-google-generativeai
-pillow
-tenacity
+# openpyxl       # Bỏ comment nếu cần xuất Excel
+# reportlab      # Bỏ comment nếu cần xuất PDF
+
+# === Caching ===
+redis  # Optional: fallback in-memory nếu không có Redis
+
+# === Dependencies cho HF Spaces ===
+# huggingface-hub
+# typing-extensions
